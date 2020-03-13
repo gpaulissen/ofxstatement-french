@@ -91,7 +91,7 @@ if __name__ == '__main__':
         description=about['__description__'],
         url=about['__url__'],
         license=about['__license__'],
-        keywords=["ofx", "banking", "statement", "ing", "icscards"],
+        keywords=["ofx", "banking", "statement", "BanquePopulaire"],
         packages=find_packages('src'),
         package_dir={'': 'src'},
         namespace_packages=["ofxstatement", "ofxstatement.plugins"],
@@ -118,7 +118,7 @@ if __name__ == '__main__':
         ],
         entry_points={
             'ofxstatement':
-            ['nl-ing = ofxstatement.plugins.nl.ing:Plugin',
-             'nl-icscards = ofxstatement.plugins.nl.icscards:Plugin']
+            ['fr-banquepopulaire = \
+ofxstatement.plugins.fr.banquepopulaire:Plugin']
         },
     )

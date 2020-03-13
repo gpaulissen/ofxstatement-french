@@ -1,0 +1,133 @@
+                                                                                                                                                                                      RELEVE N° 6 AU 02/07/2019
+
+
+
+
+                                                                          VOTRE COMPTE CHEQUES N° 99999999999                                                           M --------- ET MME
+                                                                                                                                                                        -----------------
+ 0002 0003
+
+
+
+
+                                                                          IBAN FR99 9999 9999 9999 9999 9999 999                                                        BIC CCBPFRPPBDX
+                                                                            DATE                                                                                                    DATE     DATE                     DEBIT                    CREDIT
+                                                                           COMPTA
+                                                                                                                    LIBELLE/REFERENCE                                             OPERATION VALEUR                    EUROS                    EUROS
+                                                                                                           SOLDE CREDITEUR AU 04/06/2019                                                                                                              401,99
+                                                                             06/06          VIREMENT SEPA                                                                            06/06         06/06                                                 55,00
+ 99999999*999999*XXXXXXX*XXXXXXX*99999999*00000000/00000000*00000000
+
+
+
+
+                                                                                                EVI M ------- -----
+                                                                             07/06          PRLV SEPA ---- ----                                                    XXXXXXX           07/06         07/06                       39,57
+                                                                                                ---------- --------- 999999999
+                                                                                                xxxxxxxxxxxxxxxxxx
+                                                                             09/06          VIREMENT                                                               9999999           09/06         09/06                     320,00
+                                                                                                VIR --------------------
+                                                                             11/06          VIR MME ----------------                                               9999999           11/06         11/06                       80,00
+                                                                                                XXXXXXXX
+                                                                                                xxxxxxxxxxxxxxx
+                                                                             11/06          VIREMENT SEPA                                                                            11/06         11/06                                             3 500,00
+                                                                                                EVI -----------------
+                                                                             13/06          PRLV SEPA --------                                                   XXXXXXX             13/06         13/06                       30,99
+                                                                                                --------------------------
+
+                                                                                         F FRAIS/VIREMENT
+                                                                                                -----------
+                                                                             13/06                                                                                 9999999           13/06         13/06                        4,10
+                                                                                                00001 OPERATION
+                                                                             13/06          VIREMENT SEPA                                                          9999999           13/06         13/06                  3 500,00
+                                                                                                VIR SARL ------------
+                                                                             13/06          VIREMENT SEPA                                                                            13/06         13/06                                                 16,50
+                                                                                                EVI C.P.A.M. BORDEAUX
+                                                                             14/06          VIREMENT SEPA                                                                            14/06         14/06                                                 13,60
+                                                                                                EVI GRAS SAVOYE
+                                                                             17/06          PRLV SEPA ORANGE                                                    XXXXXXX              17/06         17/06                       34,99
+                                                                                                --------------------------------
+                                                                                                -----------
+                                                                             17/06          PRLV SEPA Greenyellow Ve                                              XXXXXXX            17/06         17/06                     166,96
+                                                                                                --------------------------------
+                                                                                                -------------
+                                                                             18/06          VIREMENT SEPA                                                                            18/06         18/06                                             2 500,00
+                                                                                                EVI -------- ---------
+                                                                             18/06          VIR MME -------- -------                                               0000000           18/06         18/06                     600,00
+                                                                                                rbst apport sur compte courant
+                                                                             19/06          VIREMENT SEPA                                                                            19/06         19/06                                             2 500,00
+M9999999999999999
+
+
+
+
+                                                                                                EVI -------- ---------
+
+
+
+
+   VOTRE COMPTE CHEQUES N° 99999999999                                                                                                                    RELEVE N° 6 AU 02/07/2019
+      DATE                                                                                                          DATE     DATE                        DEBIT                       CREDIT
+     COMPTA
+                                           LIBELLE/REFERENCE                                                      OPERATION VALEUR                       EUROS                       EUROS
+      20/06          PRLV SEPA AUTOROUTES DU                                                   XXXXXXX               20/06           20/06                        43,70
+                         ---------------------------
+                         -------------------
+      21/06          VIR SARL ------------                                                        9999999            21/06           21/06                    3 500,00
+                         --------
+                         --------------------
+      24/06          ------ ----------                                                           9999999             24/06           24/06                          4,00
+                         AEROPORT BORDEA33MERIGNAC
+      25/06          PRLV SEPA Orange                                                          XXXXXXX               25/06           25/06                        80,68
+                         --------------------------------
+                         -------------
+      25/06          VIREMENT                                                                     9999999            25/06           25/06                       300,00
+                         VIR MME ----------------
+      25/06          VIREMENT SEPA                                                                                   25/06           25/06                                                  1 109,54
+                         EVI DRFIP NOUVELLE AQUIT
+      25/06          ------ ----------                                                            XXXXXXX            25/06           25/06                       123,00
+
+                  F COTIS AFFINEA
+                         ------ ------------ -----
+      26/06                                                                                       9999999            25/06           25/06                          7,18
+                         -------- ----------------------
+
+                  F COTIS AFFINEA
+                         CONTRAT -------------
+      26/06                                                                                       9999999            25/06           25/06                        12,18
+                         -------- ----------------------
+                         ------- -------------
+      26/06          ------ ----------                                                           XXXXXXX             26/06           26/06                        25,00
+                         -------------------------
+      26/06          250619 ----------                                                          XXXXXXX              26/06           26/06                        62,23
+                         biocoop        33LA BREDE
+      28/06          260619 CB****9999                                                          9999999              28/06           28/06                        21,30
+                         PEAGE AUTOROUTE84VEDENE CEDEX
+      28/06          270619 CB****9999                                                         9999999               28/06           28/06                        39,78
+                         SOL EN BIO         33LA BREDE
+      28/06          270619 CB****9999                                                          9999999              28/06           28/06                        56,03
+                         AUCHAN SUPER DA33LA BREDE
+      28/06          CARTE     DEBIT DIFFERE                                                                         28/06           30/06                         6,70
+      30/06          VIR MME -------- -------                                                     9999999            30/06           30/06                       200,00
+                         rbst apport sur compte courant
+
+                                    SOLDE CREDITEUR AU 30/06/2019                                                                                                                             838,24
+
+      01/07          VIREMENT SEPA                                                                                   01/07           01/07                                                  6 000,00
+                         EVI CASDEN B.P ENGT
+      01/07          290619 CB****9999                                                          XXXXXXX              01/07           01/07                          2,97
+                         EASYPARK SARL FR ----------
+                         2,97EUR 1 EURO = 1,000000
+      01/07          280619 CB****9999                                                         XXXXXXX               01/07           01/07                          2,25
+                         SOL EN BIO         33LA BREDE
+      01/07          300619 CB****9999                                                         XXXXXXX               01/07           01/07                          3,00
+                         AEROPORT BORDEA33MERIGNAC
+      02/07          ECHEANCE PRET                                                                9999999            01/07           01/07                    1 461,89
+                         DONT CAP 819,72 ASS. 185,02E
+                           INT. 457,15 COM. 0,00E
+      02/07          VIR M -------- ---------                                                     9999999            02/07           02/07                    2 750,00
+                         xxxx
+
+
+                                    TOTAL DES MOUVEMENTS                                                                                                    13 478,50                   15 694,64
+                                    SOLDE CREDITEUR AU 02/07/2019*                                                                                                                          2 618,13

@@ -1,10 +1,9 @@
-# ofxstatement-dutch 
+# ofxstatement-french
 
 This project provides custom
-[ofxstatement](https://github.com/kedder/ofxstatement) plugins for these dutch
+[ofxstatement](https://github.com/kedder/ofxstatement) plugins for these french
 financial institutions:
-- ICSCards, The Netherlands, PDF (https://icscards.nl/)
-- ING bank, The Netherlands, CSV (https://www.ing.nl/)
+- BanquePopulaire, France, PDF (https://www.banquepopulaire.fr/)
 
 `ofxstatement` is a tool to convert a proprietary bank statement to OFX
 format, suitable for importing into programs like GnuCash or Beancount. The
@@ -19,7 +18,7 @@ site. If your bank is missing, you can develop your own plugin.
 
 ### Development version from source
 ```
-$ git clone https://github.com/gpaulissen/ofxstatement-dutch.git
+$ git clone https://github.com/gpaulissen/ofxstatement-french.git
 $ pip install -e .
 ```
 
@@ -33,9 +32,5 @@ $ py.test
 
 ## Usage
 ```
-$ ofxstatement convert -t nl-ing ING.csv output.ofx
-
-or
-
-$ ofxstatement convert -t nl-icscards ICSCards.pdf output.ofx
+$ ofxstatement convert -t nl-banquepopulaire <file>.pdf <file>.ofx
 ```
