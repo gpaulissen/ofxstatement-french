@@ -75,10 +75,84 @@ class Parser(parser.StatementParser):
         return stmt
 
     def split_records(self):
-        """Return iterable object consisting of a line per transaction
+        """Return iterable object consisting of a line per transaction.
+
+        It starts by determining in order):
+        A) the account id
+        B) the BIC of the bank
+        C) the transactions that have 6 columns
+
+        The 6 columns (spread over 3 rows) of the transactions:
+        1) DATE COMPTA
+        2) LIBELLE/REFERENCE
+        3) DATE OPERATION
+        4) DATE VALEUR
+        5) DEBIT EUROS
+        6) CREDIT EUROS
+
+        Notes about parsing
+        ===================
+        I) The difficulty with the transactions is that the amount has not a
+        sign so you have to know the position on the line whether it is debit
+        or credit, see also function get_debit_credit.
+
+        II) The description column on the first line contains on the left the
+        name (payee) and on the right a check number. Lines 2 and so on
+        determine the memo field.
+
+        III) The DATE OPERATION is used as the date field.
+
+        IV) Amounts follow the french format: a space as the thousands
+        separator and a comma as the decimal separator.
+
+        V) A transaction may be spread over several lines like this (columns
+        left trimmed and separated by a bar):
+
+DATE  |                                          |DATE     |DATE  |DEBIT|CREDIT
+COMPTA|                                          |
+      |LIBELLE/REFERENCE                         |OPERATION|VALEUR|EUROS|EUROS
+======|==========================================|=========|======|=====|======
+ 20/06|PRLV SEPA AUTOROUTES DU            YYYYYYY|20/06    |20/06 |43,70|
+      |XXXXXXXXXXXXXXXXXXXX XXXXXX
+      |YYYYYYYYYYYYYYYYYYY
+
+        III) Or what do you think of these two transactions?
+
+ 13/06|PRLV SEPA AVANSSUR                 ZZZZZZZ|13/06    |13/06 |     |30,99
+      |Direct Assurance 999999999
+
+      |F FRAIS/VIREMENT
+      |AAAAAAAAAAA
+ 13/06|                                   BBBBBBB|13/06    |13/06 |     |4,10
+      |00001 OPERATION
+
+        Which are actually:
+
+ 13/06|PRLV SEPA AVANSSUR                 ZZZZZZZ|13/06    |13/06 |     |30,99
+      |Direct Assurance 999999999
+      |AAAAAAAAAAA
+ 13/06|FRAIS/VIREMENT                     BBBBBBB|13/06    |13/06 |     |4,10
+      |00001 OPERATION
+
+        But due to an image in the PDF the lines are spread out wrongly by
+        pdftotext. The image is converted into an empty line and an 'F '
+        above (!) the rest of the current memo.
+
+        VI) In this case the second part (DEBIT DIFFERE) off the description
+        line is not a check number but just part of the name. There is a
+        bandwith for the check number. Some heuristics show that the start
+        of the reference number + 19 is at least the position of the operation
+        date column. Let's make 20 the threshold.
+
+ 28/06|CARTE     DEBIT DIFFERE                    |28/06    |30/06 |6,70 |
+
+
         """
         def convert_str_to_list(str, max_items=None, sep=r'\s\s+|\t|\n'):
             return [x for x in re.split(sep, str)[0:max_items]]
+
+        def get_debit_credit(line: str, amount: str, credit_pos: int):
+            return 'C' if line.rfind(amount) >= credit_pos else 'D'
 
         def get_amount(amount_in, transaction_type_in):
             sign_out, amount_out = 1, None
@@ -122,26 +196,29 @@ class Parser(parser.StatementParser):
         value_date_pos = None  # DATE VALEUR
         debit_pos = None
         credit_pos = None
+        check_no_pos = None  # 20 before DATE OPERATION (guessed, see note VI)
 
         balance_pattern = \
             re.compile(r'SOLDE CREDITEUR AU (../../....).\s+([ ,0-9]+)$')
         transaction_pattern = \
-            re.compile(r'\s+\S.*\S\s+\d\d/\d\d\s+\d\d/\d\d\s+[ ,0-9]+$')
+            re.compile(r'\d\d/\d\d\s+\S.*\s+\d\d/\d\d\s+\d\d/\d\d\s+[ ,0-9]+$')
 
         read_end_balance_line = False
 
         stmt_line = None
+        payee = None  # to handle note V
 
         # breakpoint()
-        for line in self.fin:
-            logger.debug('line: %s', line)
+        for idx, line in enumerate(self.fin, start=1):
+            line_stripped = line.strip()
+            if line_stripped != '':
+                logger.debug('line %04d: %s', idx, line)
 
-            pos = line.lstrip().find('TOTAL DES MOUVEMENTS')
-            logger.debug('pos: %d', pos)
+                pos = line_stripped.find('TOTAL DES MOUVEMENTS')
 
-            if pos == 0:
-                read_end_balance_line = True
-                continue
+                if pos == 0:  # found
+                    read_end_balance_line = True
+                    continue
 
             if not self.account_id:
                 m = account_id_pattern.search(line)
@@ -164,8 +241,7 @@ class Parser(parser.StatementParser):
                 logger.debug('date: %s; balance: %s', m.group(1), m.group(2))
                 date = dt.strptime(m.group(1), '%d/%m/%Y').date()
                 balance = m.group(2)
-                transaction_type = \
-                    'C' if line.rfind(balance) >= credit_pos else 'D'
+                transaction_type = get_debit_credit(line, balance, credit_pos)
                 if read_end_balance_line:
                     self.end_balance = get_amount(balance, transaction_type)
                     self.end_date = date
@@ -175,59 +251,105 @@ class Parser(parser.StatementParser):
                     self.start_date = date
                 continue
 
-            row = convert_str_to_list(line.strip())
-            logger.debug('row: %s', str(row))
-            if row == header_rows[0]:
+            row = convert_str_to_list(line_stripped)
+            if len(row[0]) > 0:
+                logger.debug('row: %s', str(row))
+
+            if row in header_rows:
+                if row == header_rows[0]:
                     debit_pos = line.find('DEBIT')
                     assert debit_pos >= 0
                     credit_pos = line.find('CREDIT')
                     assert credit_pos >= 0
-            elif row == header_rows[1]:
+                elif row == header_rows[1]:
                     accounting_date_pos = line.find('COMPTA')
                     assert accounting_date_pos >= 0
-            elif row == header_rows[2]:
+                elif row == header_rows[2]:
                     description_pos = line.find('LIBELLE/REFERENCE')
                     assert description_pos >= 0
                     operation_date_pos = line.find('OPERATION')
                     assert operation_date_pos >= 0
+                    check_no_pos = operation_date_pos - 20
+                    assert check_no_pos >= 0
                     value_date_pos = line.find('VALEUR')
                     assert value_date_pos >= 0
+                continue
+
+            # Empty line
+            if len(row) == 1 and row[0] == '':
+                if payee is None:
+                    # Note V: first, empty line
+                    payee = ''
+                elif payee != '':  # pragma: no cover
+                    # Obviously an empty line after an 'F ' line
+                    payee = None
+                else:
+                    pass  # several empty lines before an 'F ' line possible
+                logger.debug('payee: %s', payee)
+                continue
+            # Handle note V
+            elif payee == '' and len(row) == 1 and row[0][0:2] == 'F ':
+                # Note V: second line left trimmed starting with 'F '
+                payee = row[0][2:]
+                logger.debug('payee: %s', payee)
+                continue
             else:
-                m = transaction_pattern.search(line)
-                if m:
-                    assert debit_pos >= 0
-                    assert credit_pos >= 0
-                    assert accounting_date_pos >= 0
-                    assert description_pos >= 0
-                    assert value_date_pos >= 0
+                logger.debug('payee: %s', payee)
 
-                    if stmt_line is not None:
-                        yield stmt_line
-                    stmt_line = StatementLine()
-                    stmt_line.check_no = row[-4] if len(row) >= 6 else None
-                    stmt_line.date = row[-3]
-                    stmt_line.amount = row[-1]
-                    transaction_type = \
-                        'C' if line.rfind(row[-1]) >= credit_pos else 'D'
+            m = transaction_pattern.search(line)
+            if m:
+                logger.debug('found a transaction line')
 
-                    # Should have 6 columns. If not: reduce.
+                assert debit_pos >= 0
+                assert credit_pos >= 0
+                assert accounting_date_pos >= 0
+                assert description_pos >= 0
+                assert value_date_pos >= 0
+
+                # emit previous transaction if any
+                if stmt_line is not None:
+                    yield stmt_line
+                    stmt_line = None
+
+                # Note 5
+                if payee is not None and payee != '':
+                    row.insert(1, payee)
+                    payee = None
+                    logger.debug('After adding payee to the row: %s', str(row))
+
+                stmt_line = StatementLine()
+                if len(row) >= 6 and line.find(row[-4]) >= check_no_pos:
+                    stmt_line.check_no = row[-4]
+                    logger.debug('Setting check_no: %s', row[-4])
+
+                stmt_line.date = row[-3]
+                stmt_line.amount = row[-1]
+                transaction_type = \
+                    get_debit_credit(line, row[-1], credit_pos)
+
+                # Should have 6 columns. If not: reduce.
+                if len(row) > 6:  # pragma: no cover
                     while len(row) > 6:
                         row[2] += ' ' + row[3]
                         del row[3]
+                    logger.debug('row after reducing columns: %s', str(row))
 
-                    stmt_line.payee = row[2]
-                    stmt_line.memo = ''
-                    stmt_line.amount = get_amount(stmt_line.amount,
-                                                  transaction_type)
-                elif stmt_line is not None:
-                    # Continuation of a transaction?
-                    pos = line.find(line.lstrip())
-                    if pos > accounting_date_pos and pos < operation_date_pos:
-                        stmt_line.memo += " " + line.strip()
-                    elif line.strip() != '':
-                        # not part of a transaction
-                        yield stmt_line
-                        stmt_line = None
+                stmt_line.payee = row[1]
+                stmt_line.memo = ''
+                stmt_line.amount = get_amount(stmt_line.amount,
+                                              transaction_type)
+                logger.debug('Statement line: %r', stmt_line)
+            elif stmt_line is not None:
+                # Continuation of a transaction?
+                # Or stated otherwise does the memo text completely fit
+                # in the second column?
+                pos = line.find(line_stripped)
+                if pos > accounting_date_pos and\
+                   pos + len(line_stripped) < operation_date_pos:
+                    if stmt_line.memo == '':
+                        stmt_line.memo = line_stripped
+                    else:
+                        stmt_line.memo += " " + line_stripped
 
         # end of while loop
         if stmt_line is not None:
@@ -257,7 +379,7 @@ class Parser(parser.StatementParser):
         logger.debug('Statement line: %r', stmt_line)
 
         # Remove zero-value notifications
-        if stmt_line.amount == 0:
+        if stmt_line.amount == 0:  # pragma: no cover
             return None
 
         stmt_line.date = get_date(stmt_line.date)
@@ -265,7 +387,7 @@ class Parser(parser.StatementParser):
         stmt_line.id = \
             generate_unique_transaction_id(stmt_line, self.unique_id_set)
         m = re.search(r'-(\d+)$', stmt_line.id)
-        if m:
+        if m:  # pragma: no cover
             counter = int(m.group(1))
             # include counter so the memo gets unique
             stmt_line.memo = stmt_line.memo + ' #' + str(counter + 1)
