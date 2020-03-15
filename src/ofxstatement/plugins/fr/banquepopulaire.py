@@ -61,8 +61,6 @@ class Parser(parser.StatementParser):
         # Python 3 needed
         stmt = super().parse()
 
-        logger.debug('Statement: %r', stmt)
-
         stmt.currency = 'EUR'
         stmt.bank_id = self.bank_id
         stmt.account_id = self.account_id
@@ -119,7 +117,9 @@ COMPTA|                                          |
       |XXXXXXXXXXXXXXXXXXXX XXXXXX
       |YYYYYYYYYYYYYYYYYYY
 
-        III) Or what do you think of these two transactions?
+        VI) Or what do you think of these two transactions?
+
+       Example 1:
 
  13/06|PRLV SEPA AVANSSUR                 ZZZZZZZ|13/06    |13/06 |     |30,99
       |Direct Assurance 999999999
@@ -141,7 +141,32 @@ COMPTA|                                          |
         pdftotext. The image is converted into an empty line and an 'F '
         above (!) the rest of the current memo.
 
-        VI) In this case the second part (DEBIT DIFFERE) off the description
+        Example 2:
+
+ 26/09|F COTIS AFFINEA
+      |XCCNV999 2019092500010929000001
+      |                                   0010929|25/09    |25/09|7,18  |
+
+      |F COTIS AFFINEA
+      |CONTRAT CNV0004207796
+ 26/09|                                   0010930|25/09    |25/09|12,18 |
+      |XCCNV999 2019092500010930000001
+      |CONTRAT CNV0004207797
+
+        which should be actually:
+
+ 26/09|COTIS AFFINEA                      0010929|25/09    |25/09|7,18  |
+      |XCCNV999 2019092500010929000001
+      |CONTRAT CNV0004207796
+
+ 26/09|COTIS AFFINEA                      0010930|25/09    |25/09|12,18 |
+      |XCCNV999 2019092500010930000001
+      |CONTRAT CNV0004207797
+
+        This should be solved by matching a transaction over this line
+        and the second line after that, a lookahead.
+
+        VII) In this case the second part (DEBIT DIFFERE) off the description
         line is not a check number but just part of the name. There is a
         bandwith for the check number. Some heuristics show that the start
         of the reference number + 19 is at least the position of the operation
@@ -199,7 +224,7 @@ COMPTA|                                          |
         value_date_pos = None  # DATE VALEUR
         debit_pos = None
         credit_pos = None
-        check_no_pos = None  # 20 before DATE OPERATION (guessed, see note VI)
+        check_no_pos = None  # 20 before DATE OPERATION (guessed, see note VII)
 
         balance_pattern = \
             re.compile(r'SOLDE CREDITEUR AU (../../....).\s+([ ,0-9]+)$')
@@ -209,10 +234,13 @@ COMPTA|                                          |
         read_end_balance_line = False
 
         stmt_line = None
-        payee = None  # to handle note V
+        payee = None  # to handle note VI
+
+        # Need to be able to loook ahead for complicated cases
+        lines = [line for line in self.fin]
 
         # breakpoint()
-        for idx, line in enumerate(self.fin, start=1):
+        for idx, line in enumerate(lines, start=1):
             line_stripped = line.strip()
             if line_stripped != '':
                 logger.debug('line %04d: %s', idx, line)
@@ -281,7 +309,7 @@ COMPTA|                                          |
             # Empty line
             if len(row) == 1 and row[0] == '':
                 if payee is None:
-                    # Note V: first, empty line
+                    # Note VI: first, empty line
                     payee = ''
                 elif payee != '':  # pragma: no cover
                     # Obviously an empty line after an 'F ' line
@@ -290,9 +318,9 @@ COMPTA|                                          |
                     pass  # several empty lines before an 'F ' line possible
                 logger.debug('payee: %s', payee)
                 continue
-            # Handle note V
+            # Handle note VI
             elif payee == '' and len(row) == 1 and row[0][0:2] == 'F ':
-                # Note V: second line left trimmed starting with 'F '
+                # Note VI: second line left trimmed starting with 'F '
                 payee = row[0][2:]
                 logger.debug('payee: %s', payee)
                 continue
@@ -300,6 +328,26 @@ COMPTA|                                          |
                 logger.debug('payee: %s', payee)
 
             m = transaction_pattern.match(line_stripped)
+
+            # See note VI, example 2
+            if not m and idx + 2 <= len(lines) and\
+               len(row) >= 2 and row[1][0:2] == 'F ':
+                assert line == lines[idx - 1]
+                # The first line right stripped and the 'F ' replaced by ''
+                combined_line = lines[idx - 1].rstrip().replace('F ', '', 1)
+                # Add the second line (two rows further) from the point
+                # where the first right trimmed line ends
+                combined_line += lines[idx - 1 + 2][len(combined_line):]
+                logger.debug('combined line stripped: %s',
+                             combined_line.strip())
+                m = transaction_pattern.match(combined_line.strip())
+                if m:
+                    del lines[idx - 1 + 2]  # not necessary anymore
+                    # recalculate some helper variables
+                    line = combined_line
+                    line_stripped = line.strip()
+                    row = convert_str_to_list(line_stripped)
+
             if m:
                 logger.debug('found a transaction line')
 
@@ -314,7 +362,7 @@ COMPTA|                                          |
                     yield stmt_line
                     stmt_line = None
 
-                # Note 5
+                # Note VI
                 if payee is not None and payee != '':
                     row.insert(1, payee)
                     payee = None
