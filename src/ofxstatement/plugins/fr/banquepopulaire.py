@@ -61,6 +61,8 @@ class Parser(parser.StatementParser):
         # Python 3 needed
         stmt = super().parse()
 
+        logger.debug('Statement: %r', stmt)
+
         stmt.currency = 'EUR'
         stmt.bank_id = self.bank_id
         stmt.account_id = self.account_id
@@ -68,7 +70,8 @@ class Parser(parser.StatementParser):
         stmt.start_date = self.start_date
         stmt.end_balance = self.end_balance
         stmt.end_date = self.end_date
-        stmt.end_date += datetime.timedelta(days=1)  # exclusive for OFX
+        if stmt.end_date:
+            stmt.end_date += datetime.timedelta(days=1)  # exclusive for OFX
 
         logger.debug('Statement: %r', stmt)
 
@@ -221,14 +224,14 @@ COMPTA|                                          |
                     continue
 
             if not self.account_id:
-                m = account_id_pattern.search(line)
+                m = account_id_pattern.match(line_stripped)
                 if m:
                     self.account_id = m.group(1)
                     logger.debug('account_id: %s', self.account_id)
                 continue
 
             if not self.bank_id:
-                m = bank_id_pattern.search(line)
+                m = bank_id_pattern.match(line_stripped)
                 if m:
                     self.bank_id = m.group(2)
                     logger.debug('bank_id: %s', self.bank_id)
@@ -236,7 +239,7 @@ COMPTA|                                          |
 
             assert self.account_id and self.bank_id
 
-            m = balance_pattern.search(line)
+            m = balance_pattern.match(line_stripped)
             if m:
                 logger.debug('date: %s; balance: %s', m.group(1), m.group(2))
                 date = dt.strptime(m.group(1), '%d/%m/%Y').date()
@@ -296,7 +299,7 @@ COMPTA|                                          |
             else:
                 logger.debug('payee: %s', payee)
 
-            m = transaction_pattern.search(line)
+            m = transaction_pattern.match(line_stripped)
             if m:
                 logger.debug('found a transaction line')
 

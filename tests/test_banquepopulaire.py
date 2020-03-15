@@ -3,6 +3,7 @@ import os
 from unittest import TestCase
 from decimal import Decimal
 from datetime import datetime
+import pytest
 import logging
 
 from ofxstatement.plugins.fr.banquepopulaire import Plugin
@@ -16,10 +17,7 @@ def to_date(parser, s: str):
 
 class ParserTest(TestCase):
 
-    def test_big(self):
-        # Create and configure parser:
-        here = os.path.dirname(__file__)
-        text_filename = os.path.join(here, 'samples', 'Extrait_de_compte.txt')
+    def _parse(self, text_filename):
         parser = Plugin(None, None).get_parser(text_filename)
 
         # And parse:
@@ -162,3 +160,26 @@ class ParserTest(TestCase):
                          'xxxx')
         self.assertEqual(stmt.lines[36].date, to_date(parser, "2019-07-02"))
         self.assertEqual(stmt.lines[36].check_no, '9999999')
+
+    def test_simple(self):
+        # Create and configure parser:
+        here = os.path.dirname(__file__)
+
+        self._parse(os.path.join(here, 'samples', 'Extrait_de_compte.txt'))
+
+    def test_full(self):
+        # Create and configure parser:
+        here = os.path.dirname(__file__)
+
+        self._parse(os.path.join(here, 'samples', 'Extrait_de_compte_full.txt'))
+
+    @pytest.mark.xfail(raises=AttributeError)
+    def test_fail(self):
+        """'Parser' object has no attribute 'bank_id'
+        """
+        here = os.path.dirname(__file__)
+        pdf_filename = os.path.join(here, 'samples', 'blank.pdf')
+        parser = Plugin(None, None).get_parser(pdf_filename)
+
+        # And parse:
+        parser.parse()
