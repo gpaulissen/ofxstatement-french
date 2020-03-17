@@ -40,10 +40,10 @@ class ParserTest(TestCase):
             assert isinstance(idx, int)
             if idx in [0, 4, 8, 9, 12, 14, 20, 29, 31]:
                 self.assertIsNone(stmt.lines[idx].check_no,
-                                  'idx: %d' % (idx))
+                                  'line[%d]: %s' % (idx, stmt.lines[idx]))
             else:
                 self.assertIsNotNone(stmt.lines[idx].check_no,
-                                     'idx: %d' % (idx))
+                                     'line[%d]: %s' % (idx, stmt.lines[idx]))
 
         self.assertEqual(stmt.lines[0].amount, Decimal('55.00'))
         self.assertEqual(stmt.lines[0].payee, 'VIREMENT SEPA')
@@ -172,6 +172,28 @@ class ParserTest(TestCase):
         here = os.path.dirname(__file__)
 
         self._parse(os.path.join(here, 'samples', 'Extrait_de_compte_full.txt'))
+
+    def test_balance(self):
+        # Create and configure parser:
+        here = os.path.dirname(__file__)
+
+        parser = Plugin(None, None).get_parser(os.path.join(here, 'samples', 'Extrait_de_compte_balance.txt'))
+
+        # And parse:
+        stmt = parser.parse()
+
+        self.assertEqual(stmt.currency, 'EUR')
+        self.assertEqual(stmt.bank_id, "CCBPFRPPBDX")
+        self.assertEqual(stmt.account_id, "99999999999")
+        self.assertEqual(stmt.account_type, "CHECKING")
+
+        self.assertEqual(stmt.start_balance, Decimal('-782.52'))
+        self.assertEqual(stmt.start_date, to_date(parser, "2019-08-02"))
+
+        self.assertEqual(stmt.end_balance, Decimal('131.48'))
+        self.assertEqual(stmt.end_date, to_date(parser, "2019-09-04"))
+
+        self.assertEqual(len(stmt.lines), 5)
 
     @pytest.mark.xfail(raises=AttributeError)
     def test_fail(self):

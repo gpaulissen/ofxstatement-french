@@ -138,8 +138,8 @@ COMPTA|                                          |
       |00001 OPERATION
 
         But due to an image in the PDF the lines are spread out wrongly by
-        pdftotext. The image is converted into an empty line and an 'F '
-        above (!) the rest of the current memo.
+        pdftotext. The image is converted into an empty line and an F followed
+        by whitespace above (!) the rest of the current memo.
 
         Example 2:
 
@@ -206,18 +206,23 @@ COMPTA|                                          |
 
             return sign_out * amount_out
 
+        F_pattern = re.compile(r'(F\s+)')
         account_id_pattern = re.compile(r'VOTRE COMPTE CHEQUES N° (\d+)')
         bank_id_pattern = re.compile(r'IBAN\s+(\S.+\S)\s+BIC\s+(\S+)$')
+        # The first header row should appear like that but the second
+        # is spread out over two lines.
         header_rows = [['DATE',
                         'DATE',
                         'DATE',
                         'DEBIT',
                         'CREDIT'],
-                       ['COMPTA'],
-                       ['LIBELLE/REFERENCE',
-                        'OPERATION VALEUR',
+                       ['COMPTA',
+                        'LIBELLE/REFERENCE',
+                        'OPERATION',
+                        'VALEUR',
                         'EUROS',
                         'EUROS']]
+        second_header_row = []
         accounting_date_pos = None  # DATE COMPTA
         description_pos = None  # LIBELLE/REFERENCE
         operation_date_pos = None  # DATE OPERATION
@@ -227,7 +232,7 @@ COMPTA|                                          |
         check_no_pos = None  # 20 before DATE OPERATION (guessed, see note VII)
 
         balance_pattern = \
-            re.compile(r'SOLDE CREDITEUR AU (../../....).\s+([ ,0-9]+)$')
+            re.compile(r'SOLDE (CRED|DEB)ITEUR AU (../../....).\s+([ ,0-9]+)$')
         transaction_pattern = \
             re.compile(r'\d\d/\d\d\s+\S.*\s+\d\d/\d\d\s+\d\d/\d\d\s+[ ,0-9]+$')
 
@@ -269,9 +274,10 @@ COMPTA|                                          |
 
             m = balance_pattern.match(line_stripped)
             if m:
-                logger.debug('date: %s; balance: %s', m.group(1), m.group(2))
-                date = dt.strptime(m.group(1), '%d/%m/%Y').date()
-                balance = m.group(2)
+                date = m.group(2)
+                balance = m.group(3)
+                logger.debug('date: %s; balance: %s', date, balance)
+                date = dt.strptime(date, '%d/%m/%Y').date()
                 transaction_type = get_debit_credit(line, balance, credit_pos)
                 if read_end_balance_line:
                     self.end_balance = get_amount(balance, transaction_type)
@@ -283,28 +289,44 @@ COMPTA|                                          |
                 continue
 
             row = convert_str_to_list(line_stripped)
-            if len(row[0]) > 0:
-                logger.debug('row: %s', str(row))
 
-            if row in header_rows:
-                if row == header_rows[0]:
-                    debit_pos = line.find('DEBIT')
-                    assert debit_pos >= 0
-                    credit_pos = line.find('CREDIT')
-                    assert credit_pos >= 0
-                elif row == header_rows[1]:
-                    accounting_date_pos = line.find('COMPTA')
-                    assert accounting_date_pos >= 0
-                elif row == header_rows[2]:
-                    description_pos = line.find('LIBELLE/REFERENCE')
-                    assert description_pos >= 0
-                    operation_date_pos = line.find('OPERATION')
-                    assert operation_date_pos >= 0
-                    check_no_pos = operation_date_pos - 20
-                    assert check_no_pos >= 0
-                    value_date_pos = line.find('VALEUR')
-                    assert value_date_pos >= 0
+            if row == header_rows[0]:
+                logger.debug('header row 1: %s', str(row))
+                debit_pos = line.find('DEBIT')
+                assert debit_pos >= 0
+                credit_pos = line.find('CREDIT')
+                assert credit_pos >= 0
+                # Create a copy
+                second_header_row = header_rows[1][:]
+                logger.debug('second header row: %s', str(second_header_row))
                 continue
+            elif second_header_row:
+                row = convert_str_to_list(line_stripped, sep=r'\s+|\t|\n')
+                logger.debug('header row 2/3: %s', str(row))
+                # Are the columns of this row a subset of header_rows[1]?
+                if set(row) < set(header_rows[1]):
+                    for col in row:
+                        if col == 'COMPTA':
+                            accounting_date_pos = line.find(col)
+                            assert accounting_date_pos >= 0
+                        elif col == 'LIBELLE/REFERENCE':
+                            description_pos = line.find(col)
+                            assert description_pos >= 0
+                        elif col == 'OPERATION':
+                            operation_date_pos = line.find(col)
+                            assert operation_date_pos >= 0
+                            check_no_pos = operation_date_pos - 20
+                            assert check_no_pos >= 0
+                        elif col == 'VALEUR':
+                            value_date_pos = line.find(col)
+                            assert value_date_pos >= 0
+                        elif col == 'EUROS':
+                            pass
+                        second_header_row.remove(col)
+                logger.debug('second header row: %s', str(second_header_row))
+                continue
+            elif len(row[0]) > 0:
+                logger.debug('row: %s', str(row))
 
             # Empty line
             if len(row) == 1 and row[0] == '':
@@ -312,15 +334,15 @@ COMPTA|                                          |
                     # Note VI: first, empty line
                     payee = ''
                 elif payee != '':  # pragma: no cover
-                    # Obviously an empty line after an 'F ' line
+                    # Obviously an empty line after an F\s+ line
                     payee = None
                 else:
-                    pass  # several empty lines before an 'F ' line possible
+                    pass  # several empty lines before an F line possible
                 logger.debug('payee: %s', payee)
                 continue
             # Handle note VI
-            elif payee == '' and len(row) == 1 and row[0][0:2] == 'F ':
-                # Note VI: second line left trimmed starting with 'F '
+            elif payee == '' and len(row) == 1 and F_pattern.match(row[0]):
+                # Note VI: second line left trimmed starting with F
                 payee = row[0][2:]
                 logger.debug('payee: %s', payee)
                 continue
@@ -330,23 +352,30 @@ COMPTA|                                          |
             m = transaction_pattern.match(line_stripped)
 
             # See note VI, example 2
-            if not m and idx + 2 <= len(lines) and\
-               len(row) >= 2 and row[1][0:2] == 'F ':
+            if not m and\
+               idx + 2 <= len(lines) and\
+               len(row) >= 2 and\
+               (F_pattern.match(row[1]) or (len(row) >= 3 and row[1] == 'F')):
                 assert line == lines[idx - 1]
-                # The first line right stripped and the 'F ' replaced by ''
-                combined_line = lines[idx - 1].rstrip().replace('F ', '', 1)
+                # The first line right stripped and the 'F\s+' replaced by ''
+                combined_line = lines[idx - 1].rstrip()
+                m = F_pattern.search(combined_line)
+                assert m
+                combined_line = combined_line.replace(m.group(1), '')
                 # Add the second line (two rows further) from the point
-                # where the first right trimmed line ends
-                combined_line += lines[idx - 1 + 2][len(combined_line):]
-                logger.debug('combined line stripped: %s',
-                             combined_line.strip())
-                m = transaction_pattern.match(combined_line.strip())
-                if m:
-                    del lines[idx - 1 + 2]  # not necessary anymore
-                    # recalculate some helper variables
-                    line = combined_line
-                    line_stripped = line.strip()
-                    row = convert_str_to_list(line_stripped)
+                # where the first right trimmed line ends, but only if
+                # the part before that point contains just whitespace.
+                if lines[idx - 1 + 2][0:len(combined_line)].strip() == '':
+                    combined_line += lines[idx - 1 + 2][len(combined_line):]
+                    logger.debug('combined line stripped: %s',
+                                 combined_line.strip())
+                    m = transaction_pattern.match(combined_line.strip())
+                    if m:
+                        del lines[idx - 1 + 2]  # not necessary anymore
+                        # recalculate some helper variables
+                        line = combined_line
+                        line_stripped = line.strip()
+                        row = convert_str_to_list(line_stripped)
 
             if m:
                 logger.debug('found a transaction line')
@@ -369,9 +398,13 @@ COMPTA|                                          |
                     logger.debug('After adding payee to the row: %s', str(row))
 
                 stmt_line = StatementLine()
-                if len(row) >= 6 and line.find(row[-4]) >= check_no_pos:
-                    stmt_line.check_no = row[-4]
-                    logger.debug('Setting check_no: %s', row[-4])
+                if len(row) >= 6:
+                    pos = line.find(row[-4])
+                    if pos >= check_no_pos:
+                        stmt_line.check_no = row[-4]
+                        logger.debug('Setting check_no: %s', row[-4])
+                    else:
+                        logger.debug('Skip setting check_no')
 
                 stmt_line.date = row[-3]
                 stmt_line.amount = row[-1]
@@ -423,6 +456,7 @@ COMPTA|                                          |
         def get_date(s: str):
             d = dt.strptime(s, '%d/%m').date()
             # Without a year it will be 1900 so augment
+            assert self.start_date
             while d < self.start_date:
                 d = add_years(d, 1)
             return d

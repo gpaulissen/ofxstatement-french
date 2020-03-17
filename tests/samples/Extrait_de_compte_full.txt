@@ -35,8 +35,13 @@
 
                                                                           IBAN FR99 9999 9999 9999 9999 9999 999                                                        BIC CCBPFRPPBDX
                                                                             DATE                                                                                                    DATE     DATE                     DEBIT                    CREDIT
-                                                                           COMPTA
-                                                                                                                    LIBELLE/REFERENCE                                             OPERATION VALEUR                    EUROS                    EUROS
+                                                                                                                    LIBELLE/REFERENCE
+ 20190903*233221*EXTCL02*P108253*00007893*00000001/00000003*00018203
+
+
+
+
+                                                                           COMPTA                                                                                                 OPERATION VALEUR                    EUROS                    EUROS
                                                                                                            SOLDE CREDITEUR AU 04/06/2019                                                                                                              401,99
                                                                              06/06          VIREMENT SEPA                                                                            06/06         06/06                                                 55,00
  99999999*999999*XXXXXXX*XXXXXXX*99999999*00000000/00000000*00000000
