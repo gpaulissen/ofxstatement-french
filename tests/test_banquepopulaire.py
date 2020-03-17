@@ -6,6 +6,8 @@ from datetime import datetime
 import pytest
 import logging
 
+from ofxstatement.exceptions import ValidationError
+
 from ofxstatement.plugins.fr.banquepopulaire import Plugin
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,8 @@ class ParserTest(TestCase):
 
         # And parse:
         stmt = parser.parse()
+
+        stmt.assert_valid()
 
         self.assertEqual(stmt.currency, 'EUR')
         self.assertEqual(stmt.bank_id, "CCBPFRPPBDX")
@@ -182,20 +186,22 @@ class ParserTest(TestCase):
         # And parse:
         stmt = parser.parse()
 
+        stmt.assert_valid()
+
         self.assertEqual(stmt.currency, 'EUR')
         self.assertEqual(stmt.bank_id, "CCBPFRPPBDX")
         self.assertEqual(stmt.account_id, "99999999999")
         self.assertEqual(stmt.account_type, "CHECKING")
 
-        self.assertEqual(stmt.start_balance, Decimal('-782.52'))
+        self.assertEqual(stmt.start_balance, Decimal('0.00'))
         self.assertEqual(stmt.start_date, to_date(parser, "2019-08-02"))
 
-        self.assertEqual(stmt.end_balance, Decimal('131.48'))
+        self.assertEqual(stmt.end_balance, Decimal('914.00'))
         self.assertEqual(stmt.end_date, to_date(parser, "2019-09-04"))
 
         self.assertEqual(len(stmt.lines), 5)
 
-    @pytest.mark.xfail(raises=AttributeError)
+    @pytest.mark.xfail(raises=ValidationError)
     def test_fail(self):
         """'Parser' object has no attribute 'bank_id'
         """
@@ -204,4 +210,6 @@ class ParserTest(TestCase):
         parser = Plugin(None, None).get_parser(pdf_filename)
 
         # And parse:
-        parser.parse()
+        stmt = parser.parse()
+
+        stmt.assert_valid()

@@ -9,7 +9,8 @@ from subprocess import check_output, CalledProcessError
 import logging
 
 from ofxstatement import plugin, parser
-from ofxstatement.statement import StatementLine
+from ofxstatement.exceptions import ValidationError
+from ofxstatement.statement import Statement, StatementLine
 from ofxstatement.statement import generate_unique_transaction_id
 
 # Need Python 3 for super() syntax
@@ -38,6 +39,23 @@ class Plugin(plugin.Plugin):
             fh = open(filename, "r", encoding='UTF-8')
 
         return self.get_file_object_parser(fh)
+
+
+class MyStatement(Statement):
+    def assert_valid(self):
+        try:
+            super().assert_valid()
+            assert self.end_date, "The statement end date should be set"
+            min_date = min(sl.date for sl in self.lines)
+            max_date = max(sl.date for sl in self.lines)
+            assert self.start_date <= min_date,\
+                "The statement start date ({}) should at most the smallest \
+statement line date ({})".format(self.start_date, min_date)
+            assert self.end_date > max_date,\
+                "The statement end date ({}) should be greater than the largest \
+statement line date ({})".format(self.end_date, max_date)
+        except Exception as e:
+            raise ValidationError(str(e), self)
 
 
 class Parser(parser.StatementParser):
@@ -70,6 +88,9 @@ class Parser(parser.StatementParser):
         stmt.end_date = self.end_date
         if stmt.end_date:
             stmt.end_date += datetime.timedelta(days=1)  # exclusive for OFX
+
+        # Convert to subtype. What a hack!
+        stmt.__class__ = MyStatement
 
         logger.debug('Statement: %r', stmt)
 
@@ -207,8 +228,8 @@ COMPTA|                                          |
             return sign_out * amount_out
 
         F_pattern = re.compile(r'(F\s+)')
-        account_id_pattern = re.compile(r'VOTRE COMPTE CHEQUES N° (\d+)')
-        bank_id_pattern = re.compile(r'IBAN\s+(\S.+\S)\s+BIC\s+(\S+)$')
+        account_id_pattern = re.compile(r'VOTRE .* N° (\d+)')
+        bank_id_pattern = re.compile(r'IBAN\s+(\S.+\S)\s+BIC\s+(\S+)')
         # The first header row should appear like that but the second
         # is spread out over two lines.
         header_rows = [['DATE',
@@ -283,7 +304,7 @@ COMPTA|                                          |
                     self.end_balance = get_amount(balance, transaction_type)
                     self.end_date = date
                     break
-                elif not(self.start_balance and self.start_date):
+                elif self.start_balance is None and self.start_date is None:
                     self.start_balance = get_amount(balance, transaction_type)
                     self.start_date = date
                 continue
@@ -459,6 +480,7 @@ COMPTA|                                          |
             assert self.start_date
             while d < self.start_date:
                 d = add_years(d, 1)
+            logger.debug('get_date(%s) = %s', s, d)
             return d
 
         logger.debug('Statement line: %r', stmt_line)
