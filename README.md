@@ -45,10 +45,16 @@ $ pip install -e .
 
 ## Test
 
-To run the tests you can use the py.test command:
+To run the tests from the development version you can use the py.test command:
 
 ```
 $ py.test
+```
+
+You may need to install the required test packages first:
+
+```
+$ pip install -r test_requirements.txt
 ```
 
 ## Usage
