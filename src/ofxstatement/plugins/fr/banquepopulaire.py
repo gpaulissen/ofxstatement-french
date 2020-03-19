@@ -9,8 +9,7 @@ from subprocess import check_output, CalledProcessError
 import logging
 
 from ofxstatement import plugin, parser
-from ofxstatement.exceptions import ValidationError
-from ofxstatement.statement import Statement, StatementLine
+from ofxstatement.statement import StatementLine
 from ofxstatement.statement import generate_unique_transaction_id
 
 from ofxstatement.plugins.nl.statement import Statement
@@ -93,7 +92,7 @@ class Parser(parser.StatementParser):
         name (payee) and on the right a check number. Lines 2 and so on
         determine the memo field.
 
-        III) The DATE OPERATION is used as the date field.
+        III) The DATE COMPTA is used as the date field.
 
         IV) Amounts follow the french format: a space as the thousands
         separator and a comma as the decimal separator.
@@ -400,7 +399,7 @@ COMPTA|                                          |
                     else:
                         logger.debug('Skip setting check_no')
 
-                stmt_line.date = row[-3]
+                stmt_line.date = row[0]
                 stmt_line.amount = row[-1]
                 transaction_type = \
                     get_debit_credit(line, row[-1], credit_pos)

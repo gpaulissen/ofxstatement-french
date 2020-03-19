@@ -133,7 +133,7 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[22].memo,
                          '-------- ----------------------' + ' ' +
                          'CONTRAT -------------')
-        self.assertEqual(stmt.lines[22].date, to_date(parser, "2019-06-25"))
+        self.assertEqual(stmt.lines[22].date, to_date(parser, "2019-06-26"))
         self.assertEqual(stmt.lines[22].check_no, '9999999')
 
         self.assertEqual(stmt.lines[23].amount, Decimal('-12.18'))
@@ -141,7 +141,7 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[23].memo,
                          '-------- ----------------------' + ' ' +
                          '------- -------------')
-        self.assertEqual(stmt.lines[23].date, to_date(parser, "2019-06-25"))
+        self.assertEqual(stmt.lines[23].date, to_date(parser, "2019-06-26"))
         self.assertEqual(stmt.lines[23].check_no, '9999999')
 
         self.assertEqual(stmt.lines[30].amount, Decimal('-200.00'))
