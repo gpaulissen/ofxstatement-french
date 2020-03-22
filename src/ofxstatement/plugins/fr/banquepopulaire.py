@@ -435,7 +435,7 @@ COMPTA|                                          |
     def parse_record(self, stmt_line):
         """Parse given transaction line and return StatementLine object
         """
-        def add_years(d, years):
+        def add_years(d, years):  # pragma: no cover
             """Return a date that's `years` years after the date (or datetime)
             object `d`. Return the same calendar date (month and day) in the
             destination year, if it exists, otherwise use the following day
@@ -446,13 +446,14 @@ COMPTA|                                          |
                 if d.month == 2 and d.day == 29 \
                 else d.replace(year=d.year + years)
 
-        def get_date(s: str):
-            d = dt.strptime(s, '%d/%m').date()
-            # Without a year it will be 1900 so augment
+        def get_date(d_m: str):
             assert self.statement.start_date
-            while d < self.statement.start_date:
+            # Without a year it will be 1900 so add the year
+            d_m_y = "{}/{}".format(d_m, self.statement.start_date.year)
+            d = dt.strptime(d_m_y, '%d/%m/%Y').date()
+            if d < self.statement.start_date:  # pragma: no cover
                 d = add_years(d, 1)
-            logger.debug('get_date(%s) = %s', s, d)
+            assert d >= self.statement.start_date
             return d
 
         logger.debug('Statement line: %r', stmt_line)
