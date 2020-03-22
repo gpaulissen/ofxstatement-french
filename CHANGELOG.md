@@ -11,11 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-	- Documentation mentions test_requirements.txt
+	- This Changelog
+	- The Readme mentions test_requirements.txt for installing test modules
 	- More checks concerning the content (dates with start and end
 	date exclusive) that may result in a ValidationError exception
 	- Casden accounts also supported
 	- Negative balances recognized
+	- Added Makefile for keeping the important operations together
 
 ### Changed
 
@@ -27,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 	followed by only whitespace (hence BIC<ws><number><ws><.+> is now
 	allowed)
 	- Better determination of the statement header.
-	
+
 ## [1.0.0] - 2020-03-16
 
 ### Added
