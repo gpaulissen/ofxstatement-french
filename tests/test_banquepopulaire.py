@@ -196,7 +196,7 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.start_balance, Decimal('0.00'))
         self.assertEqual(stmt.start_date, to_date(parser, "2019-08-02"))
 
-        self.assertEqual(stmt.end_balance, Decimal('914.00'))
+        self.assertEqual(stmt.end_balance, Decimal('876.00'))
         self.assertEqual(stmt.end_date, to_date(parser, "2019-09-04"))
 
         self.assertEqual(len(stmt.lines), 5)

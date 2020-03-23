@@ -14,7 +14,7 @@
                                                                            COMPTA                                                                                                         OPERATION VALEUR                       EUROS                       EUROS
                                                                                                             SOLDE DEBITEUR AU 02/08/2019                                                                                                                               0,00
                                                                              08/08           CHEQUE                                                                       0000056            08/08           08/08                        68,00
-                                                                             08/08           CHEQUE                                                                       0000057            08/08           08/08                        30,00
+                                                                             08/08           CHEQUE                                                                       0000057            08/08           08/08                        68,00
                                                                              20/08       F   COM INTERVENTION
                                                                                                  XXXXXXXX 9999999999999999999999
                                                                                                                                                                           0032259            20/08           17/08                         8,00
@@ -26,7 +26,7 @@
 
 
                                                                                                             TOTAL DES MOUVEMENTS                                                                                                         106,00                     1 020,00
-                                                                                                            SOLDE CREDITEUR AU 03/09/2019*                                                                                                                           914,00
+                                                                                                            SOLDE CREDITEUR AU 03/09/2019*                                                                                                                           876,00
 
                                                                                           RECAPITULATIF DES FRAIS ET SERVICES BANCAIRES
                                                                              20/08      F COM INTERVENTION                                                                0032259            20/08           17/08                          8,00

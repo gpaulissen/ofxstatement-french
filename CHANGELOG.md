@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.1.0] - 2020-03-23
+## [1.1.1] - 2020-03-23
+
+### Added
+
+
+### Changed
+
+	- The generation af a unique OFX id did only return a counter in
+	case of duplicates
+	- The Readme mentions now my fork of the ofxstatement instead of
+	https://github.com/kedder/ofxstatement.git
+	- The __about__.py file outputs the version number and that is
+	used in the Makefile
+	- The Makefile depends now on GNU make for tagging a release
+
+## [1.1.0] - 2020-03-22
 
 ### Added
 

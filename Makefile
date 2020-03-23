@@ -21,3 +21,11 @@ upload_test: dist
 upload: dist
 	$(PYTHON) -m twine upload dist/*
 
+# This is GNU specific I guess
+VERSION = $(shell $(PYTHON) __about__.py)
+
+TAG = v$(VERSION)
+
+tag:
+	git tag -a $(TAG) -m "$(TAG)"
+	git push origin $(TAG)
