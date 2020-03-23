@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.1] - 2020-03-23
 
-### Added
-
-
 ### Changed
 
 	- The generation af a unique OFX id did only return a counter in
