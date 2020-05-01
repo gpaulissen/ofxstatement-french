@@ -181,7 +181,7 @@ class ParserTest(TestCase):
         # Create and configure parser:
         here = os.path.dirname(__file__)
 
-        parser = Plugin(None, None).get_parser(os.path.join(here, 'samples', 'Extrait_de_compte_balance.txt'))
+        parser = Plugin(None, {'ofx_files': '*.ofx'}).get_parser(os.path.join(here, 'samples', 'Extrait_de_compte_balance.txt'))
 
         # And parse:
         stmt = parser.parse()
@@ -196,10 +196,17 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.start_balance, Decimal('0.00'))
         self.assertEqual(stmt.start_date, to_date(parser, "2019-08-02"))
 
-        self.assertEqual(stmt.end_balance, Decimal('876.00'))
+        self.assertEqual(stmt.end_balance, Decimal('808.00'))
         self.assertEqual(stmt.end_date, to_date(parser, "2019-09-04"))
 
-        self.assertEqual(len(stmt.lines), 5)
+        self.assertEqual(len(stmt.lines), 6)
+        for idx, line in enumerate(stmt.lines, start=1):
+            if idx == 2:
+                self.assertEqual(line.id, '9f31f229e78929ef4fbace80d105187bea827392')
+            elif idx == 3:
+                self.assertEqual(line.id, '9f31f229e78929ef4fbace80d105187bea8273921-1')
+            else:
+                self.assertEqual(line.id, str(idx))
 
     @pytest.mark.xfail(raises=ValidationError)
     def test_fail(self):

@@ -2,17 +2,23 @@
 import sys
 import re
 import io
+import os
+import glob
+from contextlib import contextmanager
 from decimal import Decimal
 from datetime import datetime as dt
 import datetime
 from subprocess import check_output, CalledProcessError
 import logging
 
+from ofxparse import OfxParser
+
 from ofxstatement import plugin, parser
 from ofxstatement.statement import StatementLine
 from ofxstatement.statement import generate_unique_transaction_id
 
 from ofxstatement.plugins.nl.statement import Statement
+
 
 # Need Python 3 for super() syntax
 assert sys.version_info[0] >= 3, "At least Python 3 is required."
@@ -21,16 +27,36 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
+@contextmanager
+def working_directory(path):
+    """
+    A context manager which changes the working directory to the given
+    path, and then changes it back to its previous value on exit.
+    Usage:
+    > # Do something in original directory
+    > with working_directory('/my/new/path'):
+    >     # Do something in new directory
+    > # Back to old directory
+    """
+    prev_cwd = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(prev_cwd)
+
+
 class Plugin(plugin.Plugin):
     """BanquePopulaire, France, PDF (https://www.banquepopulaire.fr/)
     """
 
-    def get_file_object_parser(self, fh):
-        return Parser(fh)
+    def get_file_object_parser(self, fh, ofx_files=None, cwd=None):
+        return Parser(fh, ofx_files, cwd)
 
     def get_parser(self, filename):
         pdftotext = ["pdftotext", "-layout", '-enc', 'UTF-8', filename, '-']
         fh = None
+        ofx_files = None
 
         # Is it a PDF or an already converted file?
         try:
@@ -39,15 +65,79 @@ class Plugin(plugin.Plugin):
         except CalledProcessError:
             fh = open(filename, "r", encoding='UTF-8')
 
-        return self.get_file_object_parser(fh)
+        try:
+            ofx_files = self.settings['ofx_files']
+        except Exception:
+            ofx_files = None
+
+        # Use the directory of the filename as the working directory
+        cwd = os.path.dirname(os.path.realpath(filename))
+
+        return self.get_file_object_parser(fh, ofx_files, cwd)
+
+
+class IdKey:
+    def __init__(self, account_id, date, amount, memo):
+        """Use the expressions from generate_unique_transaction_id()
+        """
+        self.account_id = account_id
+        self.date = date.strftime("%Y-%m-%d %H:%M:%S")
+        self.amount = str(amount)
+        self.memo = memo
+
+    def __str__(self):
+        return "({}|{}|{}|{})".format(self.account_id,
+                                      self.date,
+                                      self.amount,
+                                      self.memo)
 
 
 class Parser(parser.StatementParser):
-    def __init__(self, fin):
+    def __init__(self, fin, ofx_files=None, cwd=None):
         super().__init__()
         self.statement = Statement()  # My Statement()
         self.fin = fin
         self.unique_id_set = set()
+        self.ofx_files = ofx_files
+        self.cwd = cwd if cwd is not None else os.getcwd()
+        self.ids = {}
+
+    def read_ids(self):
+        """Read the OFX files for their id so they can be used instead of
+        generate_unique_transaction_id()
+        """
+        logger.debug('CWD before working_directory(): %s', os.getcwd())
+        if self.ofx_files:
+            with working_directory(self.cwd):
+                logger.debug('CWD while globbing: %s', os.getcwd())
+                for ofx_file in glob.glob(self.ofx_files):
+                    logger.debug("File to read: %s\n", ofx_file)
+                    with open(ofx_file, 'r') as f:
+                        ofx = OfxParser.parse(f)
+                        account_id = ofx.account.account_id
+                        for tr in ofx.account.statement.transactions:
+                            k = IdKey(account_id, tr.date, tr.amount, tr.memo)
+                            v = tr.id
+                            self.ids[str(k)] = v
+                            logger.debug('Adding key %r with value %s',
+                                         str(k),
+                                         v)
+        logger.debug('CWD after working_directory(): %s', os.getcwd())
+
+    def get_id(self, stmt_line):
+        k = IdKey(self.statement.account_id,
+                  stmt_line.date,
+                  stmt_line.amount,
+                  stmt_line.memo)
+        logger.debug('Keys stored: %s', str(self.ids.keys()))
+        id = self.ids.get(str(k))
+        if id is not None and id not in self.unique_id_set:
+            logger.debug('Found value %s for key %s', id, str(k))
+            self.unique_id_set.add(id)
+        else:
+            id = None
+            logger.debug('Did not find key %s', str(k))
+        return id
 
     def parse(self):
         """Main entry point for parsers
@@ -55,6 +145,9 @@ class Parser(parser.StatementParser):
         super() implementation will call to split_records and parse_record to
         process the file.
         """
+
+        self.read_ids()
+
         # Python 3 needed
         stmt = super().parse()
 
@@ -463,15 +556,16 @@ COMPTA|                                          |
             return None
 
         stmt_line.date = get_date(stmt_line.date)
-
-        stmt_line.id = \
-            generate_unique_transaction_id(stmt_line, self.unique_id_set)
-        m = re.match(r'([0-9a-f]+)(-\d+)?$', stmt_line.id)
-        assert m, "Id should match hexadecimal digits, \
+        stmt_line.id = self.get_id(stmt_line)
+        if not stmt_line.id:
+            stmt_line.id = \
+                generate_unique_transaction_id(stmt_line, self.unique_id_set)
+            m = re.match(r'([0-9a-f]+)(-\d+)?$', stmt_line.id)
+            assert m, "Id should match hexadecimal digits, \
 optionally followed by a minus and a counter: '{}'".format(stmt_line.id)
-        if m.group(2):
-            counter = int(m.group(2)[1:])
-            # include counter so the memo gets unique
-            stmt_line.memo = stmt_line.memo + ' #' + str(counter + 1)
+            if m.group(2):
+                counter = int(m.group(2)[1:])
+                # include counter so the memo gets unique
+                stmt_line.memo = stmt_line.memo + ' #' + str(counter + 1)
 
         return stmt_line
