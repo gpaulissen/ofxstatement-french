@@ -92,3 +92,37 @@ Or you can convert the PDF yourself and supply the text as input:
 $ pdftotext -layout <file>.pdf <file>.txt
 $ ofxstatement convert -t fr-banquepopulaire <file>.txt <file>.ofx
 ```
+
+See also the section configuration below.
+
+### Configuration
+
+For BanquePopulaire you may download their OFX files and use them to provide
+you with their OFX FITID numbers instead of relying on FITID numbers generated
+by the ofxstatement tool. You can specifiy the OFX files to read first using
+the ofxstatement configuration. The OFX files configuration is a file wildcard
+relative to the PDF to convert.
+
+```
+$ ofxstatement edit-config
+```
+
+This is a sample configuration (do not forget to specify the plugin for each section):
+
+```
+[banquepopulaire]
+plugin = fr-banquepopulaire
+ofx_files = *.ofx
+```
+
+Now this statement will convert <file>.pdf downloaded from BanquePopulaire
+(Mon Espace -> Mes documents électroniques -> Comptes) to <file>.ofx while
+using the FITIDs found in the *.ofx files in the directory of <file>.pdf.
+
+```
+$ ofxstatement convert -t banquepopulaire <file>.pdf <file>.ofx
+```
+
+## Change history
+
+See the Changelog (CHANGELOG.md).

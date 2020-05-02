@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2020-05-02
+
+### Changed
+
+	- Added the ability to retrieve the OFX id (FITID) from OFX files
+	downloaded from BanquePopulaire instead of using an id generated
+	by the ofxstatement tool.
+
 ## [1.1.1] - 2020-03-23
 
 ### Changed

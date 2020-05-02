@@ -76,28 +76,12 @@ class Plugin(plugin.Plugin):
         return self.get_file_object_parser(fh, ofx_files, cwd)
 
 
-class IdKey:
-    def __init__(self, account_id, date, amount, memo):
-        """Use the expressions from generate_unique_transaction_id()
-        """
-        self.account_id = account_id
-        self.date = date.strftime("%Y-%m-%d %H:%M:%S")
-        self.amount = str(amount)
-        self.memo = memo
-
-    def __str__(self):
-        return "({}|{}|{}|{})".format(self.account_id,
-                                      self.date,
-                                      self.amount,
-                                      self.memo)
-
-
 class Parser(parser.StatementParser):
     def __init__(self, fin, ofx_files=None, cwd=None):
         super().__init__()
         self.statement = Statement()  # My Statement()
         self.fin = fin
-        self.unique_id_set = set()
+        self.unique_id_sets = {}  # per account_id
         self.ofx_files = ofx_files
         self.cwd = cwd if cwd is not None else os.getcwd()
         self.ids = {}
@@ -114,29 +98,92 @@ class Parser(parser.StatementParser):
                     logger.debug("File to read: %s\n", ofx_file)
                     with open(ofx_file, 'r') as f:
                         ofx = OfxParser.parse(f)
-                        account_id = ofx.account.account_id
                         for tr in ofx.account.statement.transactions:
-                            k = IdKey(account_id, tr.date, tr.amount, tr.memo)
-                            v = tr.id
-                            self.ids[str(k)] = v
-                            logger.debug('Adding key %r with value %s',
-                                         str(k),
-                                         v)
+                            self.add_id(ofx_file,
+                                        tr.id,
+                                        str(ofx.account.account_id),
+                                        tr.checknum,
+                                        tr.date,
+                                        tr.amount,
+                                        tr.payee,
+                                        tr.memo)
         logger.debug('CWD after working_directory(): %s', os.getcwd())
 
+    def transaction_key(check_no, date, amount, payee, memo):
+        d = {'CHECKNUM': check_no,
+             'DTPOSTED': date.strftime("%Y-%m-%d"),
+             'TRNAMT': str(amount),
+             'NAME': payee,
+             'MEMO': memo}
+
+        for k in d.keys():
+            if d[k] is None:
+                d[k] = ''
+
+        return str(d)
+
+    def add_id(self,
+               ofx_file,
+               id,
+               account_id,
+               check_no,
+               date,
+               amount,
+               payee,
+               memo):
+        """Set the id for a check_no (if not None) or for the combination of
+               date, amount and memo
+        """
+        assert isinstance(account_id, str),\
+            "account_id (%s) must be an instance of str" % (type(account_id))
+
+        key = Parser.transaction_key(check_no, date, amount, payee, memo)
+
+        if account_id not in self.ids:
+            self.ids[account_id] = {}
+        if account_id not in self.unique_id_sets:
+            self.unique_id_sets[account_id] = set()
+
+        msg = 'FITID %s from file %s, account %s and key %s'
+        msg = msg % (id,
+                     ofx_file,
+                     account_id,
+                     key)
+        assert id not in self.unique_id_sets[account_id] or\
+            self.ids[account_id].get(key, id) == id,\
+            "Found " + self.ids[account_id].get(key, id) +\
+            " while adding " + msg
+        self.unique_id_sets[account_id].add(id)
+        self.ids[account_id][key] = id
+
+        logger.debug('Adding ' + msg)
+
     def get_id(self, stmt_line):
-        k = IdKey(self.statement.account_id,
-                  stmt_line.date,
-                  stmt_line.amount,
-                  stmt_line.memo)
-        logger.debug('Keys stored: %s', str(self.ids.keys()))
-        id = self.ids.get(str(k))
-        if id is not None and id not in self.unique_id_set:
-            logger.debug('Found value %s for key %s', id, str(k))
-            self.unique_id_set.add(id)
-        else:
+        account_id = str(self.statement.account_id)
+
+        assert isinstance(account_id, str),\
+            "account_id (%s) must be an instance of str" % (type(account_id))
+
+        key = Parser.transaction_key(stmt_line.check_no,
+                                     stmt_line.date,
+                                     stmt_line.amount,
+                                     stmt_line.payee,
+                                     stmt_line.memo)
+
+        id = None
+
+        try:
+            id = self.ids[account_id][key]
+            logger.debug('Found value %s for account %s and key %s',
+                         id,
+                         account_id,
+                         key)
+        except KeyError:
             id = None
-            logger.debug('Did not find key %s', str(k))
+            logger.debug('Did not find value for account %s and key %s',
+                         account_id,
+                         key)
+
         return id
 
     def parse(self):
@@ -344,6 +391,7 @@ COMPTA|                                          |
                 m = account_id_pattern.match(line_stripped)
                 if m:
                     self.statement.account_id = m.group(1)
+                    self.unique_id_sets[self.statement.account_id] = set()
                     logger.debug('account_id: %s', self.statement.account_id)
                 continue
 
@@ -558,8 +606,10 @@ COMPTA|                                          |
         stmt_line.date = get_date(stmt_line.date)
         stmt_line.id = self.get_id(stmt_line)
         if not stmt_line.id:
+            account_id = self.statement.account_id
             stmt_line.id = \
-                generate_unique_transaction_id(stmt_line, self.unique_id_set)
+                generate_unique_transaction_id(stmt_line,
+                                               self.unique_id_sets[account_id])
             m = re.match(r'([0-9a-f]+)(-\d+)?$', stmt_line.id)
             assert m, "Id should match hexadecimal digits, \
 optionally followed by a minus and a counter: '{}'".format(stmt_line.id)
