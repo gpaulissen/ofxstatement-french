@@ -112,12 +112,13 @@ This is a sample configuration (do not forget to specify the plugin for each sec
 ```
 [banquepopulaire]
 plugin = fr-banquepopulaire
-ofx_files = *.ofx
+ofx_files = *.ofx, ../*.ofx
 ```
 
 Now this statement will convert <file>.pdf downloaded from BanquePopulaire
 (Mon Espace -> Mes documents électroniques -> Comptes) to <file>.ofx while
-using the FITIDs found in the *.ofx files in the directory of <file>.pdf.
+using the FITIDs found in the *.ofx files in the directory of <file>.pdf or in
+its parent directory.
 
 ```
 $ ofxstatement convert -t banquepopulaire <file>.pdf <file>.ofx

@@ -11,7 +11,7 @@ import datetime
 from subprocess import check_output, CalledProcessError
 import logging
 
-from ofxparse import OfxParser
+from bs4 import BeautifulSoup
 
 from ofxstatement import plugin, parser
 from ofxstatement.statement import StatementLine
@@ -86,6 +86,41 @@ class Parser(parser.StatementParser):
         self.cwd = cwd if cwd is not None else os.getcwd()
         self.ids = {}
 
+    def process_ofx_file(self, ofx_file):
+        """Process an OFX file using Beautiful Soup.
+        """
+        def tag2text(tag, name_to_find):
+            found = tag.find(name_to_find)
+            return found.contents[0].strip() if found else None
+
+        def tag2datetime(tag, name_to_find, format):
+            text = tag2text(tag, name_to_find)
+            return dt.strptime(text, format) if text else None
+
+        logger.debug("File to read: %s\n", ofx_file)
+
+        with open(ofx_file, 'r') as f:
+            soup = BeautifulSoup(f, 'html.parser')
+
+            for banktranlist in soup.find_all('banktranlist'):
+                logger.debug("banktranlist: %s\n", banktranlist)
+                bankacctfrom = banktranlist.parent.bankacctfrom
+                acctid = None
+                if bankacctfrom:
+                    logger.debug("bankacctfrom: %s\n", bankacctfrom)
+                    acctid = tag2text(bankacctfrom, 'acctid')
+
+                for stmttrn in banktranlist('stmttrn'):
+                    logger.debug("stmttrn: %s\n", stmttrn)
+                    self.add_id(ofx_file,
+                                tag2text(stmttrn, 'fitid'),
+                                acctid,
+                                tag2text(stmttrn, 'checknum'),
+                                tag2datetime(stmttrn, 'dtposted', '%Y%m%d'),
+                                tag2text(stmttrn, 'trnamt'),
+                                tag2text(stmttrn, 'name'),
+                                tag2text(stmttrn, 'memo'))
+
     def read_ids(self):
         """Read the OFX files for their id so they can be used instead of
         generate_unique_transaction_id()
@@ -94,27 +129,17 @@ class Parser(parser.StatementParser):
         if self.ofx_files:
             with working_directory(self.cwd):
                 logger.debug('CWD while globbing: %s', os.getcwd())
-                for ofx_file in glob.glob(self.ofx_files):
-                    logger.debug("File to read: %s\n", ofx_file)
-                    with open(ofx_file, 'r') as f:
-                        ofx = OfxParser.parse(f)
-                        for tr in ofx.account.statement.transactions:
-                            self.add_id(ofx_file,
-                                        tr.id,
-                                        str(ofx.account.account_id),
-                                        tr.checknum,
-                                        tr.date,
-                                        tr.amount,
-                                        tr.payee,
-                                        tr.memo)
+                for path in self.ofx_files.split(","):
+                    for ofx_file in glob.glob(path):
+                        self.process_ofx_file(ofx_file)
         logger.debug('CWD after working_directory(): %s', os.getcwd())
 
     def transaction_key(check_no, date, amount, payee, memo):
-        d = {'CHECKNUM': check_no,
-             'DTPOSTED': date.strftime("%Y-%m-%d"),
-             'TRNAMT': str(amount),
-             'NAME': payee,
-             'MEMO': memo}
+        d = {'checknum': check_no,
+             'dtposted': date.strftime("%Y-%m-%d"),
+             'trnamt': str(amount),
+             'name': payee,
+             'memo': memo}
 
         for k in d.keys():
             if d[k] is None:

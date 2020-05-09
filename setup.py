@@ -70,7 +70,7 @@ if __name__ == '__main__':
         long_description=readme + changes,
         long_description_content_type='text/markdown',
         include_package_data=True,
-        install_requires=['ofxstatement>0.6.4', 'pdftotext', 'ofxparse'],
+        install_requires=['ofxstatement>0.6.4', 'pdftotext', 'beautifulsoup4'],
         tests_require=tests_require,
         setup_requires=[
             'setuptools>=39.1.0',

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2020-05-09
+
+### Changed
+
+	- Replaced the ofxparse library by beautifulsoup4 since the former
+	does only read one bank account and a BanquePopulaire OFX file
+	may contain several bank accounts (conform the OFX standard).
+	- The ofx_files configuration may be a list of comma separated
+	file name specifications instead of just one file name specification.
+
 ## [1.2.0] - 2020-05-02
 
 ### Changed
