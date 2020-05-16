@@ -175,13 +175,19 @@ class ParserTest(TestCase):
         # Create and configure parser:
         here = os.path.dirname(__file__)
 
-        self._parse(os.path.join(here, 'samples', 'Extrait_de_compte_full.txt'))
+        self._parse(os.path.join(here,
+                                 'samples',
+                                 'Extrait_de_compte_full.txt'))
 
     def test_balance(self):
         # Create and configure parser:
         here = os.path.dirname(__file__)
-
-        parser = Plugin(None, {'ofx_files': '*.ofx'}).get_parser(os.path.join(here, 'samples', 'Extrait_de_compte_balance.txt'))
+        cfg = {'ofx_files': '*.ofx'}
+        plugin = Plugin(None, cfg)
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait_de_compte_balance.txt'))
 
         # And parse:
         stmt = parser.parse()
@@ -202,9 +208,11 @@ class ParserTest(TestCase):
         self.assertEqual(len(stmt.lines), 6)
         for idx, line in enumerate(stmt.lines, start=1):
             if idx == 2:
-                self.assertEqual(line.id, '9f31f229e78929ef4fbace80d105187bea827392')
+                self.assertEqual(line.id,
+                                 '9f31f229e78929ef4fbace80d105187bea827392')
             elif idx == 3:
-                self.assertEqual(line.id, '9f31f229e78929ef4fbace80d105187bea8273921-1')
+                self.assertEqual(line.id,
+                                 '9f31f229e78929ef4fbace80d105187bea8273921-1')
             else:
                 self.assertEqual(line.id, str(idx))
 

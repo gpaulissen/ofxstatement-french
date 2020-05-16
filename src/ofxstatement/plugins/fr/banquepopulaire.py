@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+from typing import Iterable, Set, Optional, List, Iterator, Any
+from typing import Dict, NamedTuple, Pattern, Match, cast, Union
+
 import sys
 import re
 import io
@@ -6,14 +9,16 @@ import os
 import glob
 from contextlib import contextmanager
 from decimal import Decimal
-from datetime import datetime as dt
-import datetime
+from datetime import date
+from datetime import datetime
+from datetime import timedelta
 from subprocess import check_output, CalledProcessError
 import logging
 
 from bs4 import BeautifulSoup
 
-from ofxstatement import plugin, parser
+from ofxstatement.plugin import Plugin as BasePlugin
+from ofxstatement.parser import StatementParser as BaseStatementParser
 from ofxstatement.statement import StatementLine
 from ofxstatement.statement import generate_unique_transaction_id
 
@@ -28,7 +33,7 @@ logger.addHandler(logging.NullHandler())
 
 
 @contextmanager
-def working_directory(path):
+def working_directory(path: str) -> Iterator[Any]:
     """
     A context manager which changes the working directory to the given
     path, and then changes it back to its previous value on exit.
@@ -38,7 +43,7 @@ def working_directory(path):
     >     # Do something in new directory
     > # Back to old directory
     """
-    prev_cwd = os.getcwd()
+    prev_cwd: str = os.getcwd()
     os.chdir(path)
     try:
         yield
@@ -46,38 +51,27 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-class Plugin(plugin.Plugin):
-    """BanquePopulaire, France, PDF (https://www.banquepopulaire.fr/)
-    """
-
-    def get_file_object_parser(self, fh, ofx_files=None, cwd=None):
-        return Parser(fh, ofx_files, cwd)
-
-    def get_parser(self, filename):
-        pdftotext = ["pdftotext", "-layout", '-enc', 'UTF-8', filename, '-']
-        fh = None
-        ofx_files = None
-
-        # Is it a PDF or an already converted file?
-        try:
-            fh = io.StringIO(check_output(pdftotext).decode())
-            # No exception: apparently it is a PDF.
-        except CalledProcessError:
-            fh = open(filename, "r", encoding='UTF-8')
-
-        try:
-            ofx_files = self.settings['ofx_files']
-        except Exception:
-            ofx_files = None
-
-        # Use the directory of the filename as the working directory
-        cwd = os.path.dirname(os.path.realpath(filename))
-
-        return self.get_file_object_parser(fh, ofx_files, cwd)
+class Transaction(NamedTuple):
+    checknum: str
+    dtposted: date
+    trnamt: Decimal
+    name: str
+    memo: str
 
 
-class Parser(parser.StatementParser):
-    def __init__(self, fin, ofx_files=None, cwd=None):
+class Parser(BaseStatementParser):
+    statement: Statement
+    fin: Iterable[str]
+    unique_id_sets: Dict[str, Set[str]]
+    ofx_files: Optional[str]
+    cwd: str
+    ids: Dict[str, Dict[Transaction, str]]
+    ids_printed: bool
+
+    def __init__(self,
+                 fin: Iterable[str],
+                 ofx_files: Optional[str] = None,
+                 cwd: Optional[str] = None):
         super().__init__()
         self.statement = Statement()  # My Statement()
         self.fin = fin
@@ -85,43 +79,9 @@ class Parser(parser.StatementParser):
         self.ofx_files = ofx_files
         self.cwd = cwd if cwd is not None else os.getcwd()
         self.ids = {}
+        self.ids_printed = False
 
-    def process_ofx_file(self, ofx_file):
-        """Process an OFX file using Beautiful Soup.
-        """
-        def tag2text(tag, name_to_find):
-            found = tag.find(name_to_find)
-            return found.contents[0].strip() if found else None
-
-        def tag2datetime(tag, name_to_find, format):
-            text = tag2text(tag, name_to_find)
-            return dt.strptime(text, format) if text else None
-
-        logger.debug("File to read: %s\n", ofx_file)
-
-        with open(ofx_file, 'r') as f:
-            soup = BeautifulSoup(f, 'html.parser')
-
-            for banktranlist in soup.find_all('banktranlist'):
-                logger.debug("banktranlist: %s\n", banktranlist)
-                bankacctfrom = banktranlist.parent.bankacctfrom
-                acctid = None
-                if bankacctfrom:
-                    logger.debug("bankacctfrom: %s\n", bankacctfrom)
-                    acctid = tag2text(bankacctfrom, 'acctid')
-
-                for stmttrn in banktranlist('stmttrn'):
-                    logger.debug("stmttrn: %s\n", stmttrn)
-                    self.add_id(ofx_file,
-                                tag2text(stmttrn, 'fitid'),
-                                acctid,
-                                tag2text(stmttrn, 'checknum'),
-                                tag2datetime(stmttrn, 'dtposted', '%Y%m%d'),
-                                tag2text(stmttrn, 'trnamt'),
-                                tag2text(stmttrn, 'name'),
-                                tag2text(stmttrn, 'memo'))
-
-    def read_ids(self):
+    def read_ids(self) -> None:
         """Read the OFX files for their id so they can be used instead of
         generate_unique_transaction_id()
         """
@@ -132,44 +92,79 @@ class Parser(parser.StatementParser):
                 for path in self.ofx_files.split(","):
                     for ofx_file in glob.glob(path):
                         self.process_ofx_file(ofx_file)
+        self.print_ids('after read_ids')
         logger.debug('CWD after working_directory(): %s', os.getcwd())
 
-    def transaction_key(check_no, date, amount, payee, memo):
-        d = {'checknum': check_no,
-             'dtposted': date.strftime("%Y-%m-%d"),
-             'trnamt': str(amount),
-             'name': payee,
-             'memo': memo}
+    def process_ofx_file(self, ofx_file: str) -> None:
+        """Process an OFX file using Beautiful Soup.
+        """
+        def tag2text(tag: Any,
+                     name_to_find: str) -> Optional[str]:
+            found = tag.find(name_to_find)
+            return found.contents[0].strip() if found else None
 
-        for k in d.keys():
-            if d[k] is None:
-                d[k] = ''
+        def tag2date(tag: Any,
+                     name_to_find: str,
+                     format: str) -> Optional[date]:
+            text: Optional[str] = tag2text(tag, name_to_find)
+            return datetime.strptime(text, format).date() if text else None
 
-        return str(d)
+        def tag2decimal(tag: Any,
+                        name_to_find: str) -> Optional[Decimal]:
+            text: Optional[str] = tag2text(tag, name_to_find)
+            return Decimal(text) if text else None
+
+        logger.debug("File to read: %s\n", ofx_file)
+
+        with open(ofx_file, 'r') as f:
+            soup = BeautifulSoup(f, 'html.parser')
+
+            for banktranlist in soup.find_all('banktranlist'):
+                logger.debug("banktranlist: %s\n", banktranlist)
+                bankacctfrom = banktranlist.parent.bankacctfrom
+                acctid: Optional[str]
+                if bankacctfrom:
+                    logger.debug("bankacctfrom: %s\n", bankacctfrom)
+                    acctid = tag2text(bankacctfrom, 'acctid')
+                    if acctid:
+                        for tr in banktranlist('stmttrn'):
+                            logger.debug("stmttrn: %s\n", tr)
+                            self.add_id(ofx_file,
+                                        tag2text(tr, 'fitid'),
+                                        acctid,
+                                        tag2text(tr, 'checknum'),
+                                        tag2date(tr, 'dtposted', '%Y%m%d'),
+                                        tag2decimal(tr, 'trnamt'),
+                                        tag2text(tr, 'name'),
+                                        tag2text(tr, 'memo'))
 
     def add_id(self,
-               ofx_file,
-               id,
-               account_id,
-               check_no,
-               date,
-               amount,
-               payee,
-               memo):
-        """Set the id for a check_no (if not None) or for the combination of
-               date, amount and memo
-        """
+               ofx_file: str,
+               id: Optional[str],
+               account_id: str,
+               check_no: Optional[str],
+               dtposted: Optional[date],
+               amount: Optional[Decimal],
+               payee: Optional[str],
+               memo: Optional[str]) -> None:
+        """Set the id"""
+        assert id is not None, "id should not be None"
+
         assert isinstance(account_id, str),\
             "account_id (%s) must be an instance of str" % (type(account_id))
 
-        key = Parser.transaction_key(check_no, date, amount, payee, memo)
+        key: Transaction = Parser.transaction_key(check_no,
+                                                  dtposted,
+                                                  amount,
+                                                  payee,
+                                                  memo)
 
         if account_id not in self.ids:
             self.ids[account_id] = {}
         if account_id not in self.unique_id_sets:
             self.unique_id_sets[account_id] = set()
 
-        msg = 'FITID %s from file %s, account %s and key %s'
+        msg: str = 'FITID %s from file %s, account %s and key %s'
         msg = msg % (id,
                      ofx_file,
                      account_id,
@@ -183,19 +178,51 @@ class Parser(parser.StatementParser):
 
         logger.debug('Adding ' + msg)
 
-    def get_id(self, stmt_line):
-        account_id = str(self.statement.account_id)
+    def transaction_key(check_no: Optional[str],
+                        dtposted: Optional[date],
+                        amount: Optional[Decimal],
+                        payee: Optional[str],
+                        memo: Optional[str]) -> Transaction:
+        assert check_no is None or isinstance(check_no, str),\
+            "check_no (%s) must be an instance of str" % (type(check_no))
+        assert dtposted is None or isinstance(dtposted, date),\
+            "dtposted (%s) must be an instance of date" % (type(dtposted))
+        assert amount is None or isinstance(amount, Decimal),\
+            "amount (%s) must be an instance of Decimal" % (type(amount))
+        assert payee is None or isinstance(payee, str),\
+            "payee (%s) must be an instance of str or None" % (type(payee))
+        assert memo is None or isinstance(memo, str),\
+            "memo (%s) must be an instance of str or None" % (type(memo))
+        return Transaction(None if check_no == '' else check_no,
+                           dtposted,  # dtposted.strftime("%Y-%m-%d"),
+                           amount,
+                           None if payee == '' else payee,
+                           None if memo == '' else memo)
+
+    def print_ids(self, msg: str) -> None:
+        """Print the ids.
+        """
+        logger.debug('%s', msg)
+        for account_id in self.ids:
+            for key in self.ids[account_id]:
+                logger.debug('FITID for account %s and key %s: %s',
+                             account_id,
+                             str(key),
+                             self.ids[account_id][key])
+
+    def get_id(self, stmt_line: StatementLine) -> Optional[str]:
+        account_id: str = str(self.statement.account_id)
 
         assert isinstance(account_id, str),\
             "account_id (%s) must be an instance of str" % (type(account_id))
 
-        key = Parser.transaction_key(stmt_line.check_no,
-                                     stmt_line.date,
-                                     stmt_line.amount,
-                                     stmt_line.payee,
-                                     stmt_line.memo)
+        key: Transaction = Parser.transaction_key(stmt_line.check_no,
+                                                  stmt_line.date,
+                                                  stmt_line.amount,
+                                                  stmt_line.payee,
+                                                  stmt_line.memo)
 
-        id = None
+        id: Optional[str]
 
         try:
             id = self.ids[account_id][key]
@@ -208,10 +235,13 @@ class Parser(parser.StatementParser):
             logger.debug('Did not find value for account %s and key %s',
                          account_id,
                          key)
+            if not self.ids_printed:
+                self.print_ids('get_id KeyError')
+                self.ids_printed = True
 
         return id
 
-    def parse(self):
+    def parse(self) -> Statement:
         """Main entry point for parsers
 
         super() implementation will call to split_records and parse_record to
@@ -225,13 +255,13 @@ class Parser(parser.StatementParser):
 
         stmt.currency = 'EUR'
         if stmt.end_date:
-            stmt.end_date += datetime.timedelta(days=1)  # exclusive for OFX
+            stmt.end_date += timedelta(days=1)  # exclusive for OFX
 
         logger.debug('Statement: %r', stmt)
 
         return stmt
 
-    def split_records(self):
+    def split_records(self) -> Iterator[Any]:
         """Return iterable object consisting of a line per transaction.
 
         It starts by determining in order):
@@ -332,14 +362,18 @@ COMPTA|                                          |
 
 
         """
-        def convert_str_to_list(str, max_items=None, sep=r'\s\s+|\t|\n'):
+        def convert_str_to_list(str: str,
+                                max_items: Optional[int] = None,
+                                sep: str = r'\s\s+|\t|\n') -> List[str]:
             return [x for x in re.split(sep, str)[0:max_items]]
 
-        def get_debit_credit(line: str, amount: str, credit_pos: int):
+        def get_debit_credit(line: str, amount: str, credit_pos: int) -> str:
             return 'C' if line.rfind(amount) >= credit_pos else 'D'
 
-        def get_amount(amount_in, transaction_type_in):
-            sign_out, amount_out = 1, None
+        def get_amount(amount_in: Decimal,
+                       transaction_type_in: str) -> Decimal:
+            sign_out: int = 1
+            amount_out: Optional[Decimal] = None
 
             # determine sign_out
             assert isinstance(transaction_type_in, str)
@@ -362,43 +396,54 @@ COMPTA|                                          |
 
             return sign_out * amount_out
 
-        F_pattern = re.compile(r'(F\s+)')
-        account_id_pattern = re.compile(r'VOTRE .* N° (\d+)')
+        F_pattern: Pattern[str] = re.compile(r'(F\s+)')
+        account_id_pattern: Pattern[str] = re.compile(r'VOTRE .* N° (\d+)')
+        bank_id_pattern: Pattern[str]
         bank_id_pattern = re.compile(r'IBAN\s+(\S.+\S)\s+BIC\s+(\S+)')
         # The first header row should appear like that but the second
         # is spread out over two lines.
-        header_rows = [['DATE',
-                        'DATE',
-                        'DATE',
-                        'DEBIT',
-                        'CREDIT'],
-                       ['COMPTA',
-                        'LIBELLE/REFERENCE',
-                        'OPERATION',
-                        'VALEUR',
-                        'EUROS',
-                        'EUROS']]
-        second_header_row = []
-        accounting_date_pos = None  # DATE COMPTA
-        description_pos = None  # LIBELLE/REFERENCE
-        operation_date_pos = None  # DATE OPERATION
-        value_date_pos = None  # DATE VALEUR
-        debit_pos = None
-        credit_pos = None
-        check_no_pos = None  # 20 before DATE OPERATION (guessed, see note VII)
+        header_rows: List[List[str]] = [['DATE',
+                                         'DATE',
+                                         'DATE',
+                                         'DEBIT',
+                                         'CREDIT'],
+                                        ['COMPTA',
+                                         'LIBELLE/REFERENCE',
+                                         'OPERATION',
+                                         'VALEUR',
+                                         'EUROS',
+                                         'EUROS']]
+        second_header_row: List[str] = []
+        accounting_date_pos: Optional[int] = None  # DATE COMPTA
+        description_pos: Optional[int] = None  # LIBELLE/REFERENCE
+        operation_date_pos: Optional[int] = None  # DATE OPERATION
+        value_date_pos: Optional[int] = None  # DATE VALEUR
+        debit_pos: Optional[int] = None
+        credit_pos: Optional[int] = None
+        # 20 before DATE OPERATION (guessed, see note VII)
+        check_no_pos: Optional[int] = None
 
-        balance_pattern = \
+        balance_pattern: Pattern[str] = \
             re.compile(r'SOLDE (CRED|DEB)ITEUR AU (../../....).\s+([ ,0-9]+)$')
-        transaction_pattern = \
+        transaction_pattern: Pattern[str] = \
             re.compile(r'\d\d/\d\d\s+\S.*\s+\d\d/\d\d\s+\d\d/\d\d\s+[ ,0-9]+$')
 
-        read_end_balance_line = False
+        read_end_balance_line: bool = False
 
-        stmt_line = None
-        payee = None  # to handle note VI
+        stmt_line: Optional[StatementLine] = None
+        payee: Optional[str] = None  # to handle note VI
 
         # Need to be able to loook ahead for complicated cases
-        lines = [line for line in self.fin]
+        lines: List[str] = [line for line in self.fin]
+
+        pos: int
+        m: Optional[Match[str]]
+        transaction_type: str
+        line_stripped: str
+        accounting_date: date
+        balance: Union[str, Decimal]
+        row: List[str]
+        combined_line: str
 
         # breakpoint()
         for idx, line in enumerate(lines, start=1):
@@ -431,20 +476,24 @@ COMPTA|                                          |
 
             m = balance_pattern.match(line_stripped)
             if m:
-                date = m.group(2)
+                accounting_date = datetime.strptime(m.group(2),
+                                                    '%d/%m/%Y').date()
                 balance = m.group(3)
-                logger.debug('date: %s; balance: %s', date, balance)
-                date = dt.strptime(date, '%d/%m/%Y').date()
+                logger.debug('accounting_date: %s; balance: %s',
+                             accounting_date,
+                             balance)
+                assert credit_pos is not None
                 transaction_type = get_debit_credit(line, balance, credit_pos)
+                balance = cast(Decimal, balance)
                 if read_end_balance_line:
                     self.statement.end_balance = get_amount(balance,
                                                             transaction_type)
-                    self.statement.end_date = date
+                    self.statement.end_date = accounting_date
                     break
                 elif self.statement.start_balance is None:
                     self.statement.start_balance = get_amount(balance,
                                                               transaction_type)
-                    self.statement.start_date = date
+                    self.statement.start_date = accounting_date
                 continue
 
             row = convert_str_to_list(line_stripped)
@@ -539,11 +588,12 @@ COMPTA|                                          |
             if m:
                 logger.debug('found a transaction line')
 
-                assert debit_pos >= 0
-                assert credit_pos >= 0
-                assert accounting_date_pos >= 0
-                assert description_pos >= 0
-                assert value_date_pos >= 0
+                assert debit_pos is not None and debit_pos >= 0
+                assert credit_pos is not None and credit_pos >= 0
+                assert accounting_date_pos is not None \
+                    and accounting_date_pos >= 0
+                assert description_pos is not None and description_pos >= 0
+                assert value_date_pos is not None and value_date_pos >= 0
 
                 # emit previous transaction if any
                 if stmt_line is not None:
@@ -559,6 +609,7 @@ COMPTA|                                          |
                 stmt_line = StatementLine()
                 if len(row) >= 6:
                     pos = line.find(row[-4])
+                    assert check_no_pos is not None
                     if pos >= check_no_pos:
                         stmt_line.check_no = row[-4]
                         logger.debug('Setting check_no: %s', row[-4])
@@ -566,7 +617,8 @@ COMPTA|                                          |
                         logger.debug('Skip setting check_no')
 
                 stmt_line.date = row[0]
-                stmt_line.amount = row[-1]
+                stmt_line.amount = cast(Decimal, row[-1])
+                assert credit_pos is not None
                 transaction_type = \
                     get_debit_credit(line, row[-1], credit_pos)
 
@@ -583,6 +635,8 @@ COMPTA|                                          |
                                               transaction_type)
                 logger.debug('Statement line: %r', stmt_line)
             elif stmt_line is not None:
+                assert accounting_date_pos is not None
+                assert operation_date_pos is not None
                 # Continuation of a transaction?
                 # Or stated otherwise does the memo text completely fit
                 # in the second column?
@@ -598,11 +652,11 @@ COMPTA|                                          |
         if stmt_line is not None:
             yield stmt_line
 
-    def parse_record(self, stmt_line):
+    def parse_record(self, stmt_line: StatementLine) -> StatementLine:
         """Parse given transaction line and return StatementLine object
         """
-        def add_years(d, years):  # pragma: no cover
-            """Return a date that's `years` years after the date (or datetime)
+        def add_years(d: date, years: int) -> date:  # pragma: no cover
+            """Return a date that's `years` years after the date
             object `d`. Return the same calendar date (month and day) in the
             destination year, if it exists, otherwise use the following day
             (thus changing February 29 to March 1).
@@ -612,11 +666,11 @@ COMPTA|                                          |
                 if d.month == 2 and d.day == 29 \
                 else d.replace(year=d.year + years)
 
-        def get_date(d_m: str):
+        def get_date(d_m: str) -> date:
             assert self.statement.start_date
             # Without a year it will be 1900 so add the year
-            d_m_y = "{}/{}".format(d_m, self.statement.start_date.year)
-            d = dt.strptime(d_m_y, '%d/%m/%Y').date()
+            d_m_y: str = "{}/{}".format(d_m, self.statement.start_date.year)
+            d: date = datetime.strptime(d_m_y, '%d/%m/%Y').date()
             if d < self.statement.start_date:  # pragma: no cover
                 d = add_years(d, 1)
             assert d >= self.statement.start_date
@@ -644,3 +698,41 @@ optionally followed by a minus and a counter: '{}'".format(stmt_line.id)
                 stmt_line.memo = stmt_line.memo + ' #' + str(counter + 1)
 
         return stmt_line
+
+
+class Plugin(BasePlugin):
+    """BanquePopulaire, France, PDF (https://www.banquepopulaire.fr/)
+    """
+
+    def get_file_object_parser(self,
+                               fh: Iterable[str],
+                               ofx_files: Optional[str] = None,
+                               cwd: Optional[str] = None) -> Parser:
+        return Parser(fh, ofx_files, cwd)
+
+    def get_parser(self, filename: str) -> Parser:
+        pdftotext: List[str] = ["pdftotext",
+                                "-layout",
+                                '-enc',
+                                'UTF-8',
+                                filename,
+                                '-']
+        fh: Iterable[str]
+        ofx_files: Optional[str]
+
+        # Is it a PDF or an already converted file?
+        try:
+            fh = io.StringIO(check_output(pdftotext).decode())
+            # No exception: apparently it is a PDF.
+        except CalledProcessError:
+            fh = open(filename, "r", encoding='UTF-8')
+
+        try:
+            ofx_files = self.settings['ofx_files']
+        except Exception:
+            ofx_files = None
+
+        # Use the directory of the filename as the working directory
+        cwd: str = os.path.dirname(os.path.realpath(filename))
+
+        return self.get_file_object_parser(fh, ofx_files, cwd)

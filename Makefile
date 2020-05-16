@@ -2,16 +2,40 @@
 
 GIT = git
 PYTHON = python
+MYPY = mypy
+PIP = pip
 
-.PHONY: test dist distclean upload
+# OS specific section
+ifeq '$(findstring ;,$(PATH))' ';'
+    detected_OS := Windows
+else
+    detected_OS := $(shell uname 2>/dev/null || echo Unknown)
+    detected_OS := $(patsubst CYGWIN%,Cygwin,$(detected_OS))
+    detected_OS := $(patsubst MSYS%,MSYS,$(detected_OS))
+    detected_OS := $(patsubst MINGW%,MSYS,$(detected_OS))
+endif
+
+ifeq ($(detected_OS),Windows)
+    RM_EGGS = pushd $(CONDA_PREFIX) && del /s/p ofxstatement-french.egg-link ofxstatement-french-nspkg.pth
+else
+    RM_EGGS = cd $(CONDA_PREFIX) && find . \( -name ofxstatement-french.egg-link -o -name ofxstatement-french-nspkg.pth \) -exec rm -i {} \;
+endif
+
+.PHONY: clean install test dist distclean upload
 
 clean:
 	$(PYTHON) setup.py clean --all
+	$(RM_EGGS)
 
-test: clean
-	$(PYTHON) -m pytest
+install: clean
+	$(PIP) install -e .
+	$(PIP) install -r test_requirements.txt
 
-dist: test
+test: 
+	$(MYPY) --show-error-codes src
+	$(PYTHON) -m pytest --exitfirst
+
+dist: install test
 	$(PYTHON) setup.py sdist bdist_wheel
 	$(PYTHON) -m twine check dist/*
 
