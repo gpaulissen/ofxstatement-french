@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2020-05-23
+
+### Changed
+
+	- In case a transaction is duplicated (in several files), the
+	latest transaction and thus FITID read will prevail. A transaction
+	key is composed of ACCTID, CHECKNUM, DTPOSTED, TRNAMT and NAME
+	(either CHECKNUM or NAME is empty).
+
 ## [1.3.0] - 2020-05-23
 
 ### Changed
@@ -24,10 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 	- The ofx_files cache will provide the PAYEE and MEMO fields if
 	there is a match since BanquePopulaire does not necessarily show
 	the same values for the same transaction in a PDF and OFX file.
-	- In case a transaction is duplicated (in several files), the
-	latest transaction and thus FITID read will prevail. A transaction
-	key is composed of ACCTID, CHECKNUM, DTPOSTED, TRNAMT and NAME
-	(either CHECKNUM or NAME is empty).
 
 ## [1.2.0] - 2020-05-02
 
