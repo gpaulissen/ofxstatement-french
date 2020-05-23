@@ -18,7 +18,7 @@
                                                                              08/08           CHEQUE                                                                       0000057            08/08           08/08                        68,00																																						 
                                                                              20/08       F   COM INTERVENTION
                                                                                                  XXXXXXXX 9999999999999999999999
-                                                                                                                                                                          0032259            20/08           17/08                         8,00
+                                                                                                                                                                          0032259            20/06           17/08                         8,00
                                                                                                  1 OPERATION
                                                                              27/08           ----------------------                                                       0812417            27/08           27/08                                                   900,00
                                                                                                  -----------------
@@ -30,7 +30,7 @@
                                                                                                             SOLDE CREDITEUR AU 03/09/2019*                                                                                                                           808,00
 
                                                                                           RECAPITULATIF DES FRAIS ET SERVICES BANCAIRES
-                                                                             20/08      F COM INTERVENTION                                                                0032259            20/08           17/08                          8,00
+                                                                             20/08      F COM INTERVENTION                                                                0032259            20/06           17/08                          8,00
                                                                                                           TOTAL DU 03/08/2019 AU 03/09/2019                                                                                                 8,00
                                                                                              (*) Sous réserve des opérations en cours d'enregistrement et d'une provision suffisante et disponible lors de l'arrêté du solde du compte réalisé en fin de journée.
                                                                                              - Ce document ne justifie pas la déduction de la TVA ou de la charge en matière d'impôt direct -

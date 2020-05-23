@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from datetime import date
+
 from ofxstatement.statement import Statement as BaseStatement
 from ofxstatement.exceptions import ValidationError
 
@@ -9,8 +11,8 @@ class Statement(BaseStatement):
         try:
             super().assert_valid()
             assert self.end_date, "The statement end date should be set"
-            min_date = min(sl.date for sl in self.lines)
-            max_date = max(sl.date for sl in self.lines)
+            min_date: date = min(sl.accounting_date for sl in self.lines)
+            max_date: date = max(sl.accounting_date for sl in self.lines)
             assert self.start_date <= min_date,\
                 "The statement start date ({}) should at most the smallest \
 statement line date ({})".format(self.start_date, min_date)

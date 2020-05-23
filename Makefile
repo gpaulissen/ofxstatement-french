@@ -26,12 +26,15 @@ endif
 clean:
 	$(PYTHON) setup.py clean --all
 	$(RM_EGGS)
+	$(PYTHON) -Bc "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.py[co]')]"
+	$(PYTHON) -Bc "import pathlib; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__')]"
+	$(PYTHON) -Bc "import shutil; shutil.rmtree('.pytest_cache')"
 
 install: clean
 	$(PIP) install -e .
 	$(PIP) install -r test_requirements.txt
 
-test: 
+test:
 	$(MYPY) --show-error-codes src
 	$(PYTHON) -m pytest --exitfirst
 

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.3.0] - 2020-05-09
+## [1.3.0] - 2020-05-23
 
 ### Changed
 
@@ -15,7 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 	does only read one bank account and a BanquePopulaire OFX file
 	may contain several bank accounts (conform the OFX standard).
 	- The ofx_files configuration may be a list of comma separated
-	file name specifications instead of just one file name specification.
+	file name specifications instead of just one file name
+	specification.
+	- The ofx_files cache will provide the OFX FITID for PDF statement
+	line ID if there is a match on any of the three dates (DATE
+	COMPTA, DATE OPERATION, DATE VALEUR) in the PDF. Usually DATE
+	COMPTA is equal to DTPOSTED from the OFX, but not always.
+	- The ofx_files cache will provide the PAYEE and MEMO fields if
+	there is a match since BanquePopulaire does not necessarily show
+	the same values for the same transaction in a PDF and OFX file.
 
 ## [1.2.0] - 2020-05-02
 
