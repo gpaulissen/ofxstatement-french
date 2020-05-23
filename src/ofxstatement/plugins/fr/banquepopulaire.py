@@ -22,7 +22,7 @@ from ofxstatement.parser import StatementParser as BaseStatementParser
 from ofxstatement.statement import StatementLine
 from ofxstatement.statement import generate_unique_transaction_id
 
-from ofxstatement.plugins.nl.statement import Statement
+from ofxstatement.plugins.fr.statement import Statement
 
 
 # Need Python 3 for super() syntax
@@ -51,12 +51,47 @@ def working_directory(path: str) -> Iterator[Any]:
         os.chdir(prev_cwd)
 
 
-class Transaction(NamedTuple):
-    checknum: str
-    dtposted: date
-    trnamt: Decimal
-    name: str
-    memo: str
+class TransactionKey(NamedTuple):
+    """
+    This OFX transaction:
+
+    <STMTTRN>
+    <TRNTYPE>CREDIT
+    <DTPOSTED>20191126
+    <TRNAMT>+248.21
+    <FITID>201901100044BD27
+    <CHECKNUM>F6KJAIV
+    <NAME>EVI DRFIP NOUVELLE AQUIT
+    <MEMO>REMUNERATION DU 11/2019. MINISTE RE : 206 GESTION : 991-033
+    </STMTTRN>
+
+    will be shown in the PDF as:
+
+    accounting_date: 26/11/2019
+    payee: VIREMENT SEPA
+    operation_date: 26/11/2019
+    value_date: 26/11/2019
+    amount: 248,21
+    memo: EVI DRFIP NOUVELLE AQUIT
+    check_no: -
+
+    So we do not know from the OFX whether it is a VIREMENT SEPA or not and
+    therefore we will add two keys:
+    - one with CHECKNUM from the OFX and NAME empty
+    - one with CHECKNUM empty and the NAME from the OFX
+    """
+    account_id: str
+    checknum: Optional[str]
+    dtposted: Optional[date]
+    trnamt: Optional[Decimal]
+    name: Optional[str]  # for VIREMENT SEPA
+
+
+class TransactionData(NamedTuple):
+    ofx_file: str
+    id: str
+    name: Optional[str]
+    memo: Optional[str]
 
 
 class Parser(BaseStatementParser):
@@ -65,8 +100,8 @@ class Parser(BaseStatementParser):
     unique_id_sets: Dict[str, Set[str]]
     ofx_files: Optional[str]
     cwd: str
-    ids: Dict[str, Dict[Transaction, str]]
-    ids_printed: bool
+    cache: Dict[TransactionKey, TransactionData]
+    cache_printed: bool
 
     def __init__(self,
                  fin: Iterable[str],
@@ -78,10 +113,10 @@ class Parser(BaseStatementParser):
         self.unique_id_sets = {}  # per account_id
         self.ofx_files = ofx_files
         self.cwd = cwd if cwd is not None else os.getcwd()
-        self.ids = {}
-        self.ids_printed = False
+        self.cache = {}
+        self.cache_printed = False
 
-    def read_ids(self) -> None:
+    def read_cache(self) -> None:
         """Read the OFX files for their id so they can be used instead of
         generate_unique_transaction_id()
         """
@@ -92,7 +127,7 @@ class Parser(BaseStatementParser):
                 for path in self.ofx_files.split(","):
                     for ofx_file in glob.glob(path):
                         self.process_ofx_file(ofx_file)
-        self.print_ids('after read_ids')
+        self.print_cache('after read_cache')
         logger.debug('CWD after working_directory(): %s', os.getcwd())
 
     def process_ofx_file(self, ofx_file: str) -> None:
@@ -129,117 +164,168 @@ class Parser(BaseStatementParser):
                     if acctid:
                         for tr in banktranlist('stmttrn'):
                             logger.debug("stmttrn: %s\n", tr)
-                            self.add_id(ofx_file,
-                                        tag2text(tr, 'fitid'),
-                                        acctid,
-                                        tag2text(tr, 'checknum'),
-                                        tag2date(tr, 'dtposted', '%Y%m%d'),
-                                        tag2decimal(tr, 'trnamt'),
-                                        tag2text(tr, 'name'),
-                                        tag2text(tr, 'memo'))
+                            fitid: Optional[str] = tag2text(tr, 'fitid')
 
-    def add_id(self,
-               ofx_file: str,
-               id: Optional[str],
-               account_id: str,
-               check_no: Optional[str],
-               dtposted: Optional[date],
-               amount: Optional[Decimal],
-               payee: Optional[str],
-               memo: Optional[str]) -> None:
-        """Set the id"""
-        assert id is not None, "id should not be None"
+                            assert fitid is not None
+                            self.add_cache(ofx_file,
+                                           fitid,
+                                           acctid,
+                                           tag2text(tr, 'checknum'),
+                                           tag2date(tr, 'dtposted', '%Y%m%d'),
+                                           tag2decimal(tr, 'trnamt'),
+                                           tag2text(tr, 'name'),
+                                           tag2text(tr, 'memo'))
 
-        assert isinstance(account_id, str),\
-            "account_id (%s) must be an instance of str" % (type(account_id))
+    def add_cache(self,
+                  ofx_file: str,
+                  id: str,
+                  account_id: str,
+                  check_no: Optional[str],
+                  dtposted: Optional[date],
+                  amount: Optional[Decimal],
+                  payee: Optional[str],
+                  memo: Optional[str]) -> None:
+        """Set the transaction"""
+        if check_no and payee:
+            self.add_cache(ofx_file,
+                           id,
+                           account_id,
+                           None,
+                           dtposted,
+                           amount,
+                           payee,
+                           memo)
+        key: TransactionKey
+        assert check_no or payee
+        if check_no:
+            key = Parser.transaction_key(account_id,
+                                         check_no,
+                                         dtposted,
+                                         amount,
+                                         None)
+        elif payee:
+            key = Parser.transaction_key(account_id,
+                                         None,
+                                         dtposted,
+                                         amount,
+                                         payee)
+        data: TransactionData = Parser.transaction_data(ofx_file,
+                                                        id,
+                                                        payee,
+                                                        memo)
 
-        key: Transaction = Parser.transaction_key(check_no,
-                                                  dtposted,
-                                                  amount,
-                                                  payee,
-                                                  memo)
-
-        if account_id not in self.ids:
-            self.ids[account_id] = {}
         if account_id not in self.unique_id_sets:
             self.unique_id_sets[account_id] = set()
 
-        msg: str = 'FITID %s from file %s, account %s and key %s'
-        msg = msg % (id,
-                     ofx_file,
-                     account_id,
-                     key)
-        assert id not in self.unique_id_sets[account_id] or\
-            self.ids[account_id].get(key, id) == id,\
-            "Found " + self.ids[account_id].get(key, id) +\
-            " while adding " + msg
+        msg: str = 'key (%r) and data (%r)' % (key, data)
+
         self.unique_id_sets[account_id].add(id)
-        self.ids[account_id][key] = id
 
-        logger.debug('Adding ' + msg)
+        if self.cache.get(key, data) != data:
+            logger.warning('Already found this data (%r) while adding %s',
+                           self.cache.get(key),
+                           msg)
 
-    def transaction_key(check_no: Optional[str],
+        self.cache[key] = data
+
+        logger.debug('Adding %s', msg)
+
+    def transaction_key(account_id: str,
+                        check_no: Optional[str],
                         dtposted: Optional[date],
                         amount: Optional[Decimal],
-                        payee: Optional[str],
-                        memo: Optional[str]) -> Transaction:
+                        name: Optional[str]) -> TransactionKey:
+        assert isinstance(account_id, str),\
+            "account_id (%s) must be an instance of str" % (type(account_id))
         assert check_no is None or isinstance(check_no, str),\
             "check_no (%s) must be an instance of str" % (type(check_no))
         assert dtposted is None or isinstance(dtposted, date),\
             "dtposted (%s) must be an instance of date" % (type(dtposted))
         assert amount is None or isinstance(amount, Decimal),\
             "amount (%s) must be an instance of Decimal" % (type(amount))
+        assert name is None or isinstance(name, str),\
+            "name (%s) must be an instance of str" % (type(name))
+
+        return TransactionKey(account_id,
+                              None if check_no == '' else check_no,
+                              dtposted,
+                              amount,
+                              None if name == '' else name)
+
+    def transaction_data(ofx_file: str,
+                         id: str,
+                         payee: Optional[str],
+                         memo: Optional[str]) -> TransactionData:
+        assert isinstance(ofx_file, str),\
+            "ofx_file (%s) must be an instance of str" % (type(ofx_file))
+        assert isinstance(id, str),\
+            "id (%s) must be an instance of str" % (type(id))
         assert payee is None or isinstance(payee, str),\
             "payee (%s) must be an instance of str or None" % (type(payee))
         assert memo is None or isinstance(memo, str),\
             "memo (%s) must be an instance of str or None" % (type(memo))
-        return Transaction(None if check_no == '' else check_no,
-                           dtposted,  # dtposted.strftime("%Y-%m-%d"),
-                           amount,
-                           None if payee == '' else payee,
-                           None if memo == '' else memo)
 
-    def print_ids(self, msg: str) -> None:
-        """Print the ids.
+        # If payee or memo is not empty there may be a whitespace difference
+        # so remove multiple whitespace characters by a single one
+        payee = ' '.join(payee.split()) if payee else None
+        memo = ' '.join(memo.split()) if memo else None
+
+        return TransactionData(ofx_file,
+                               id,
+                               None if payee == '' else payee,
+                               None if memo == '' else memo)
+
+    def print_cache(self, msg: str) -> None:
+        """Print the cache.
         """
         logger.debug('%s', msg)
-        for account_id in self.ids:
-            for key in self.ids[account_id]:
-                logger.debug('FITID for account %s and key %s: %s',
-                             account_id,
-                             str(key),
-                             self.ids[account_id][key])
+        for key in self.cache:
+            logger.debug('key: %r; data: %r',
+                         key,
+                         self.cache[key])
 
-    def get_id(self, stmt_line: StatementLine) -> Optional[str]:
+    def try_cache(self, stmt_line: StatementLine) -> None:
         account_id: str = str(self.statement.account_id)
+        key: TransactionKey
+        data: TransactionData
 
-        assert isinstance(account_id, str),\
-            "account_id (%s) must be an instance of str" % (type(account_id))
+        # The PDF may differ from the OFX by a different date
+        # or a switch from payee to memo or otherwise: forget them
+        for dt in [stmt_line.accounting_date,
+                   stmt_line.operation_date,
+                   stmt_line.value_date]:
+            check_no: Optional[str]
+            name: Optional[str]
+            if stmt_line.payee == 'VIREMENT SEPA' and not(stmt_line.check_no):
+                check_no = None
+                name = stmt_line.memo
+            else:
+                check_no = stmt_line.check_no
+                name = None
 
-        key: Transaction = Parser.transaction_key(stmt_line.check_no,
-                                                  stmt_line.date,
-                                                  stmt_line.amount,
-                                                  stmt_line.payee,
-                                                  stmt_line.memo)
+            key = Parser.transaction_key(account_id,
+                                         check_no,
+                                         dt,
+                                         stmt_line.amount,
+                                         name)
 
-        id: Optional[str]
+            if key in self.cache:
+                data = self.cache[key]
+                logger.debug('Found data %r for key %r',
+                             data, key)
+                stmt_line.date = dt
+                stmt_line.id = data.id
+                stmt_line.payee = data.name
+                stmt_line.memo = data.memo
+                return
+            else:
+                logger.debug('Did not find value for key %r', key)
 
-        try:
-            id = self.ids[account_id][key]
-            logger.debug('Found value %s for account %s and key %s',
-                         id,
-                         account_id,
-                         key)
-        except KeyError:
-            id = None
-            logger.debug('Did not find value for account %s and key %s',
-                         account_id,
-                         key)
-            if not self.ids_printed:
-                self.print_ids('get_id KeyError')
-                self.ids_printed = True
+        if not self.cache_printed:
+            self.print_cache('try_cache: no data found')
+            self.cache_printed = True
 
-        return id
+        return
 
     def parse(self) -> Statement:
         """Main entry point for parsers
@@ -248,10 +334,10 @@ class Parser(BaseStatementParser):
         process the file.
         """
 
-        self.read_ids()
+        self.read_cache()
 
         # Python 3 needed
-        stmt = super().parse()
+        stmt: Statement = super().parse()
 
         stmt.currency = 'EUR'
         if stmt.end_date:
@@ -431,6 +517,7 @@ COMPTA|                                          |
         read_end_balance_line: bool = False
 
         stmt_line: Optional[StatementLine] = None
+        stmt_lines: List[StatementLine] = []
         payee: Optional[str] = None  # to handle note VI
 
         # Need to be able to loook ahead for complicated cases
@@ -597,7 +684,7 @@ COMPTA|                                          |
 
                 # emit previous transaction if any
                 if stmt_line is not None:
-                    yield stmt_line
+                    stmt_lines.append(stmt_line)
                     stmt_line = None
 
                 # Note VI
@@ -616,7 +703,9 @@ COMPTA|                                          |
                     else:
                         logger.debug('Skip setting check_no')
 
-                stmt_line.date = row[0]
+                stmt_line.accounting_date = row[0]
+                stmt_line.operation_date = row[-2]
+                stmt_line.value_date = row[-3]
                 stmt_line.amount = cast(Decimal, row[-1])
                 assert credit_pos is not None
                 transaction_type = \
@@ -650,12 +739,15 @@ COMPTA|                                          |
 
         # end of while loop
         if stmt_line is not None:
-            yield stmt_line
+            stmt_lines.append(stmt_line)
+        # We can only yield the statement lines when end_date is there,
+        # see function get_date() below
+        return (sl for sl in stmt_lines)
 
     def parse_record(self, stmt_line: StatementLine) -> StatementLine:
         """Parse given transaction line and return StatementLine object
         """
-        def add_years(d: date, years: int) -> date:  # pragma: no cover
+        def add_years(d: date, years: int) -> date:
             """Return a date that's `years` years after the date
             object `d`. Return the same calendar date (month and day) in the
             destination year, if it exists, otherwise use the following day
@@ -667,13 +759,13 @@ COMPTA|                                          |
                 else d.replace(year=d.year + years)
 
         def get_date(d_m: str) -> date:
-            assert self.statement.start_date
+            assert self.statement.end_date
             # Without a year it will be 1900 so add the year
-            d_m_y: str = "{}/{}".format(d_m, self.statement.start_date.year)
+            d_m_y: str = "{}/{}".format(d_m, self.statement.end_date.year)
             d: date = datetime.strptime(d_m_y, '%d/%m/%Y').date()
-            if d < self.statement.start_date:  # pragma: no cover
-                d = add_years(d, 1)
-            assert d >= self.statement.start_date
+            if d > self.statement.end_date:
+                d = add_years(d, -1)
+            assert d <= self.statement.end_date
             return d
 
         logger.debug('Statement line: %r', stmt_line)
@@ -682,9 +774,12 @@ COMPTA|                                          |
         if stmt_line.amount == 0:  # pragma: no cover
             return None
 
-        stmt_line.date = get_date(stmt_line.date)
-        stmt_line.id = self.get_id(stmt_line)
+        stmt_line.accounting_date = get_date(stmt_line.accounting_date)
+        stmt_line.operation_date = get_date(stmt_line.operation_date)
+        stmt_line.value_date = get_date(stmt_line.value_date)
+        self.try_cache(stmt_line)
         if not stmt_line.id:
+            stmt_line.date = stmt_line.accounting_date
             account_id = self.statement.account_id
             stmt_line.id = \
                 generate_unique_transaction_id(stmt_line,

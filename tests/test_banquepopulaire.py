@@ -213,8 +213,41 @@ class ParserTest(TestCase):
             elif idx == 3:
                 self.assertEqual(line.id,
                                  '9f31f229e78929ef4fbace80d105187bea8273921-1')
+            elif idx == 4:
+                self.assertEqual(line.id, str(idx))
+                # These values are taken from the cache
+                self.assertEqual(line.date, to_date(parser, "2019-06-20"))
+                self.assertEqual(line.payee, 'I DO NOT LIKE COM INTERVENTION')
+                self.assertEqual(line.memo,
+                                 '9999999999999999999999 1 OPERATION')
             else:
                 self.assertEqual(line.id, str(idx))
+
+    def test_january(self):
+        # Create and configure parser:
+        here = os.path.dirname(__file__)
+        plugin = Plugin(None, None)
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait_de_compte_janvier.txt'))
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
+        self.assertEqual(stmt.currency, 'EUR')
+        self.assertEqual(stmt.bank_id, "CCBPFRPPBDX")
+        self.assertEqual(stmt.account_id, "99999999999")
+        self.assertEqual(stmt.account_type, "CHECKING")
+
+        self.assertEqual(stmt.start_balance, Decimal('981.04'))
+        self.assertEqual(stmt.start_date, to_date(parser, "2019-12-03"))
+
+        self.assertEqual(stmt.end_balance, Decimal('30.86'))
+        self.assertEqual(stmt.end_date, to_date(parser, "2020-01-03"))
+
+        self.assertEqual(len(stmt.lines), 45)
 
     @pytest.mark.xfail(raises=ValidationError)
     def test_fail(self):
