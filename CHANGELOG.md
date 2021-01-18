@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2021-01-18
+
+### Added
+
+	- Ability to set the bank id in the configuration.
+
 ## [1.3.1] - 2020-05-23
 
 ### Changed

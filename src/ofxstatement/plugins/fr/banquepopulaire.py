@@ -100,19 +100,22 @@ class Parser(BaseStatementParser):
     unique_id_sets: Dict[str, Set[str]]
     ofx_files: Optional[str]
     cwd: str
+    bank_id: Optional[str]
     cache: Dict[TransactionKey, TransactionData]
     cache_printed: bool
 
     def __init__(self,
                  fin: Iterable[str],
                  ofx_files: Optional[str] = None,
-                 cwd: Optional[str] = None):
+                 cwd: Optional[str] = None,
+                 bank_id: Optional[str] = None):
         super().__init__()
         self.statement = Statement()  # My Statement()
         self.fin = fin
         self.unique_id_sets = {}  # per account_id
         self.ofx_files = ofx_files
         self.cwd = cwd if cwd is not None else os.getcwd()
+        self.bank_id = bank_id
         self.cache = {}
         self.cache_printed = False
 
@@ -557,6 +560,9 @@ COMPTA|                                          |
                 if m:
                     self.statement.bank_id = m.group(2)
                     logger.debug('bank_id: %s', self.statement.bank_id)
+                elif self.bank_id:
+                    self.statement.bank_id = self.bank_id
+                    logger.debug('bank_id: %s', self.statement.bank_id)
                 continue
 
             assert self.statement.account_id and self.statement.bank_id
@@ -738,6 +744,9 @@ COMPTA|                                          |
                         stmt_line.memo += " " + line_stripped
 
         # end of while loop
+        # assert self.statement.account_id, "No account id found."
+        # assert self.statement.bank_id, "No bank id found."
+        # assert stmt_lines, "No statement lines found."
         if stmt_line is not None:
             stmt_lines.append(stmt_line)
         # We can only yield the statement lines when end_date is there,
@@ -802,8 +811,9 @@ class Plugin(BasePlugin):
     def get_file_object_parser(self,
                                fh: Iterable[str],
                                ofx_files: Optional[str] = None,
-                               cwd: Optional[str] = None) -> Parser:
-        return Parser(fh, ofx_files, cwd)
+                               cwd: Optional[str] = None,
+                               bank_id: Optional[str] = None) -> Parser:
+        return Parser(fh, ofx_files, cwd, bank_id)
 
     def get_parser(self, filename: str) -> Parser:
         pdftotext: List[str] = ["pdftotext",
@@ -814,6 +824,7 @@ class Plugin(BasePlugin):
                                 '-']
         fh: Iterable[str]
         ofx_files: Optional[str]
+        bank_id: Optional[str]
 
         # Is it a PDF or an already converted file?
         try:
@@ -830,4 +841,9 @@ class Plugin(BasePlugin):
         # Use the directory of the filename as the working directory
         cwd: str = os.path.dirname(os.path.realpath(filename))
 
-        return self.get_file_object_parser(fh, ofx_files, cwd)
+        try:
+            bank_id = self.settings['bank_id']
+        except Exception:
+            bank_id = None
+
+        return self.get_file_object_parser(fh, ofx_files, cwd, bank_id)

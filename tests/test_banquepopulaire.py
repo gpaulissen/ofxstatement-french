@@ -221,7 +221,9 @@ class ParserTest(TestCase):
                 self.assertEqual(line.memo,
                                  '9999999999999999999999 1 OPERATION')
             else:
-                self.assertEqual(line.id, str(idx))
+                # Statement lines 1, 4, 5 and 6 should have that FITID,
+                # so line 5 has FITID 5.
+                self.assertEqual(line.id, str(idx), line)
 
     def test_january(self):
         # Create and configure parser:
@@ -249,6 +251,32 @@ class ParserTest(TestCase):
 
         self.assertEqual(len(stmt.lines), 45)
 
+    def test_january_2021(self):
+        # Create and configure parser:
+        here = os.path.dirname(__file__)
+        plugin = Plugin(None, {'bank_id': 'CCBPFRPPBDX'})
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait_de_compte_janvier_2021.txt'))
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
+        self.assertEqual(stmt.currency, 'EUR')
+        self.assertEqual(stmt.bank_id, "CCBPFRPPBDX")
+        self.assertEqual(stmt.account_id, "99999999999")
+        self.assertEqual(stmt.account_type, "CHECKING")
+
+        self.assertEqual(stmt.start_balance, Decimal('6010.50'))
+        self.assertEqual(stmt.start_date, to_date(parser, "2020-01-02"))
+
+        self.assertEqual(stmt.end_balance, Decimal('6000.00'))
+        self.assertEqual(stmt.end_date, to_date(parser, "2021-01-05"))
+
+        self.assertEqual(len(stmt.lines), 27)
+
     @pytest.mark.xfail(raises=ValidationError)
     def test_fail(self):
         """'Parser' object has no attribute 'bank_id'
@@ -256,6 +284,21 @@ class ParserTest(TestCase):
         here = os.path.dirname(__file__)
         pdf_filename = os.path.join(here, 'samples', 'blank.pdf')
         parser = Plugin(None, None).get_parser(pdf_filename)
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
+
+    @pytest.mark.xfail(raises=ValidationError)
+    def test_fail_january_2021(self):
+        # Create and configure parser:
+        here = os.path.dirname(__file__)
+        plugin = Plugin(None, None)
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait_de_compte_janvier_2021.txt'))
 
         # And parse:
         stmt = parser.parse()

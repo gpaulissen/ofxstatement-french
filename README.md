@@ -126,6 +126,15 @@ by the ofxstatement tool. You can specifiy the OFX files to read first using
 the ofxstatement configuration. The OFX files configuration is a comma
 separated list of wildcard specifications relative to the PDF to convert.
 
+You may also need to set a bank id, since the statement files do not always
+contain bank information like the BIC code in this line:
+
+```
+IBAN FR99 9999 9999 9999 9999 9999 999                                                        BIC CCBPFRPPBDX    *** C A S D E N-B P ***
+```
+
+
+
 ```
 $ ofxstatement edit-config
 ```
@@ -136,6 +145,7 @@ This is a sample configuration (do not forget to specify the plugin for each sec
 [banquepopulaire]
 plugin = fr-banquepopulaire
 ofx_files = *.ofx, ../*.ofx
+bank_id = CCBPFRPPBDX
 ```
 
 Now this statement will convert <file>.pdf downloaded from BanquePopulaire

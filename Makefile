@@ -4,6 +4,7 @@ GIT = git
 PYTHON = python
 MYPY = mypy
 PIP = pip
+PROJECT = ofxstatement-french
 
 # OS specific section
 ifeq '$(findstring ;,$(PATH))' ';'
@@ -16,9 +17,9 @@ else
 endif
 
 ifeq ($(detected_OS),Windows)
-    RM_EGGS = pushd $(CONDA_PREFIX) && del /s/p ofxstatement-french.egg-link ofxstatement-french-nspkg.pth
+    RM_EGGS = pushd $(CONDA_PREFIX) && del /s/p $(PROJECT).egg-link $(PROJECT)-nspkg.pth
 else
-    RM_EGGS = cd $(CONDA_PREFIX) && find . \( -name ofxstatement-french.egg-link -o -name ofxstatement-french-nspkg.pth \) -exec rm -i {} \;
+    RM_EGGS = cd $(CONDA_PREFIX) && find . \( -name $(PROJECT).egg-link -o -name $(PROJECT)-nspkg.pth \) -exec rm -i {} \;
 endif
 
 .PHONY: clean install test dist distclean upload
