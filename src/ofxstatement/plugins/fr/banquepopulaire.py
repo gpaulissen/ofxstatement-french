@@ -21,6 +21,7 @@ from ofxstatement.plugin import Plugin as BasePlugin
 from ofxstatement.parser import StatementParser as BaseStatementParser
 from ofxstatement.statement import StatementLine
 from ofxstatement.statement import generate_unique_transaction_id
+from ofxstatement.exceptions import ValidationError
 
 from ofxstatement.plugins.fr.statement import Statement
 
@@ -128,8 +129,15 @@ class Parser(BaseStatementParser):
             with working_directory(self.cwd):
                 logger.debug('CWD while globbing: %s', os.getcwd())
                 for path in self.ofx_files.split(","):
+                    ofx_files = set()
                     for ofx_file in glob.glob(path):
-                        self.process_ofx_file(ofx_file)
+                        if ofx_file not in ofx_files:
+                            self.process_ofx_file(ofx_file)
+                            ofx_files.add(ofx_file)
+                    if len(ofx_files) == 0:
+                        raise ValidationError(
+                            'No OFX file found for path "%s" part of "%s"' %
+                            (path, self.ofx_files), self)
         self.print_cache('after read_cache')
         logger.debug('CWD after working_directory(): %s', os.getcwd())
 
@@ -224,7 +232,7 @@ class Parser(BaseStatementParser):
 
         self.unique_id_sets[account_id].add(id)
 
-        if self.cache.get(key, data) != data:
+        if self.cache.get(key, data) != data:  # pragma: no cover
             logger.warning('Already found this data (%r) while adding %s',
                            self.cache.get(key),
                            msg)

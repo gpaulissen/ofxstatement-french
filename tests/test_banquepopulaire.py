@@ -304,3 +304,18 @@ class ParserTest(TestCase):
         stmt = parser.parse()
 
         stmt.assert_valid()
+
+    @pytest.mark.xfail(raises=ValidationError)
+    def test_fail_ofx_files(self):
+        """'Parser' object has no attribute 'bank_id'
+        """
+        here = os.path.dirname(__file__)
+        pdf_filename = os.path.join(here, 'samples', 'blank.pdf')
+        cfg = {'ofx_files': '~/*.ofx'}
+        plugin = Plugin(None, cfg)
+        parser = plugin.get_parser(pdf_filename)
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
