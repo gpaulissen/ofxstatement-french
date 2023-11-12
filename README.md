@@ -19,7 +19,7 @@ The PDF is converted using the
 
 This bank allows you to download OFX files but only for transactions not older
 than 90 days. In order to read the transactions older than 90 days, you need to
-download a PDF from their site: Mon espace -> Mes documents électroniques -> Comptes /
+download a PDF from their site: Mon espace -> Mes documents Ã©lectroniques -> Comptes /
 Epargne et placements. This utility can convert such a PDF to an OFX
 file.
 
@@ -149,7 +149,7 @@ bank_id = CCBPFRPPBDX
 ```
 
 Now this statement will convert <file>.pdf downloaded from BanquePopulaire
-(Mon Espace -> Mes documents électroniques -> Comptes) to <file>.ofx while
+(Mon Espace -> Mes documents Ã©lectroniques -> Comptes) to <file>.ofx while
 using the FITIDs found in the *.ofx files in the directory of <file>.pdf or in
 its parent directory.
 
