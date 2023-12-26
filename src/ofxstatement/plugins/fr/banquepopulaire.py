@@ -307,6 +307,7 @@ class Parser(BaseStatementParser[StatementLine]):
         for dt in [getattr(stmt_line, 'accounting_date'),
                    getattr(stmt_line, 'operation_date'),
                    getattr(stmt_line, 'value_date')]:
+            assert type(dt) is date, "Type of {} should be date".format(dt)
             check_no: Optional[str]
             name: Optional[str]
             if stmt_line.payee == 'VIREMENT SEPA' and not stmt_line.check_no:
@@ -326,7 +327,7 @@ class Parser(BaseStatementParser[StatementLine]):
                 data = self.cache[key]
                 logger.debug('Found data %r for key %r',
                              data, key)
-                stmt_line.date = dt
+                stmt_line.date = datetime.combine(dt, datetime.min.time())
                 stmt_line.id = data.id
                 stmt_line.payee = data.name
                 stmt_line.memo = data.memo

@@ -220,7 +220,7 @@ class ParserTest(TestCase):
             elif idx == 4:
                 self.assertEqual(line.id, str(idx))
                 # These values are taken from the cache
-                self.assertEqual(line.date, d(parser, "2019-06-20"))
+                self.assertEqual(line.date, dt(parser, "2019-06-20"))
                 self.assertEqual(line.payee, 'I DO NOT LIKE COM INTERVENTION')
                 self.assertEqual(line.memo,
                                  '9999999999999999999999 1 OPERATION')
