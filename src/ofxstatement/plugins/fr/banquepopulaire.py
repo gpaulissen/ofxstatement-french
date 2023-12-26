@@ -95,7 +95,7 @@ class TransactionData(NamedTuple):
     memo: Optional[str]
 
 
-class Parser(BaseStatementParser):
+class Parser(BaseStatementParser[StatementLine]):
     statement: Statement
     fin: Iterable[str]
     unique_id_sets: Dict[str, Set[str]]
@@ -241,20 +241,21 @@ class Parser(BaseStatementParser):
 
         logger.debug('Adding %s', msg)
 
+    @staticmethod
     def transaction_key(account_id: str,
                         check_no: Optional[str],
                         dtposted: Optional[date],
                         amount: Optional[Decimal],
                         name: Optional[str]) -> TransactionKey:
-        assert isinstance(account_id, str),\
+        assert isinstance(account_id, str), \
             "account_id (%s) must be an instance of str" % (type(account_id))
-        assert check_no is None or isinstance(check_no, str),\
+        assert check_no is None or isinstance(check_no, str), \
             "check_no (%s) must be an instance of str" % (type(check_no))
-        assert dtposted is None or isinstance(dtposted, date),\
+        assert dtposted is None or isinstance(dtposted, date), \
             "dtposted (%s) must be an instance of date" % (type(dtposted))
-        assert amount is None or isinstance(amount, Decimal),\
+        assert amount is None or isinstance(amount, Decimal), \
             "amount (%s) must be an instance of Decimal" % (type(amount))
-        assert name is None or isinstance(name, str),\
+        assert name is None or isinstance(name, str), \
             "name (%s) must be an instance of str" % (type(name))
 
         return TransactionKey(account_id,
@@ -263,17 +264,18 @@ class Parser(BaseStatementParser):
                               amount,
                               None if name == '' else name)
 
+    @staticmethod
     def transaction_data(ofx_file: str,
                          id: str,
                          payee: Optional[str],
                          memo: Optional[str]) -> TransactionData:
-        assert isinstance(ofx_file, str),\
+        assert isinstance(ofx_file, str), \
             "ofx_file (%s) must be an instance of str" % (type(ofx_file))
-        assert isinstance(id, str),\
+        assert isinstance(id, str), \
             "id (%s) must be an instance of str" % (type(id))
-        assert payee is None or isinstance(payee, str),\
+        assert payee is None or isinstance(payee, str), \
             "payee (%s) must be an instance of str or None" % (type(payee))
-        assert memo is None or isinstance(memo, str),\
+        assert memo is None or isinstance(memo, str), \
             "memo (%s) must be an instance of str or None" % (type(memo))
 
         # If payee or memo is not empty there may be a whitespace difference
@@ -302,12 +304,12 @@ class Parser(BaseStatementParser):
 
         # The PDF may differ from the OFX by a different date
         # or a switch from payee to memo or otherwise: forget them
-        for dt in [stmt_line.accounting_date,
-                   stmt_line.operation_date,
-                   stmt_line.value_date]:
+        for dt in [getattr(stmt_line, 'accounting_date'),
+                   getattr(stmt_line, 'operation_date'),
+                   getattr(stmt_line, 'value_date')]:
             check_no: Optional[str]
             name: Optional[str]
-            if stmt_line.payee == 'VIREMENT SEPA' and not(stmt_line.check_no):
+            if stmt_line.payee == 'VIREMENT SEPA' and not stmt_line.check_no:
                 check_no = None
                 name = stmt_line.memo
             else:
@@ -348,7 +350,7 @@ class Parser(BaseStatementParser):
         self.read_cache()
 
         # Python 3 needed
-        stmt: Statement = super().parse()
+        stmt: Statement = Statement(super().parse())
 
         stmt.currency = 'EUR'
         if stmt.end_date:
@@ -358,7 +360,7 @@ class Parser(BaseStatementParser):
 
         return stmt
 
-    def split_records(self) -> Iterator[Any]:
+    def split_records(self) -> Iterator[StatementLine]:
         """Return iterable object consisting of a line per transaction.
 
         It starts by determining in order):
@@ -589,12 +591,16 @@ COMPTA|                                          |
                 if read_end_balance_line:
                     self.statement.end_balance = get_amount(balance,
                                                             transaction_type)
-                    self.statement.end_date = accounting_date
+                    self.statement.end_date = \
+                        datetime.combine(accounting_date,
+                                         datetime.min.time())
                     break
                 elif self.statement.start_balance is None:
                     self.statement.start_balance = get_amount(balance,
                                                               transaction_type)
-                    self.statement.start_date = accounting_date
+                    self.statement.start_date = \
+                        datetime.combine(accounting_date,
+                                         datetime.min.time())
                 continue
 
             row = convert_str_to_list(line_stripped)
@@ -717,9 +723,9 @@ COMPTA|                                          |
                     else:
                         logger.debug('Skip setting check_no')
 
-                stmt_line.accounting_date = row[0]
-                stmt_line.operation_date = row[-2]
-                stmt_line.value_date = row[-3]
+                setattr(stmt_line, 'accounting_date', row[0])
+                setattr(stmt_line, 'operation_date', row[-2])
+                setattr(stmt_line, 'value_date', row[-3])
                 stmt_line.amount = cast(Decimal, row[-1])
                 assert credit_pos is not None
                 transaction_type = \
@@ -748,7 +754,7 @@ COMPTA|                                          |
                    pos + len(line_stripped) < operation_date_pos:
                     if stmt_line.memo == '':
                         stmt_line.memo = line_stripped
-                    else:
+                    elif stmt_line.memo:
                         stmt_line.memo += " " + line_stripped
 
         # end of while loop
@@ -761,7 +767,7 @@ COMPTA|                                          |
         # see function get_date() below
         return (sl for sl in stmt_lines)
 
-    def parse_record(self, stmt_line: StatementLine) -> StatementLine:
+    def parse_record(self, line: StatementLine) -> Optional[StatementLine]:
         """Parse given transaction line and return StatementLine object
         """
         def add_years(d: date, years: int) -> date:
@@ -780,36 +786,40 @@ COMPTA|                                          |
             # Without a year it will be 1900 so add the year
             d_m_y: str = "{}/{}".format(d_m, self.statement.end_date.year)
             d: date = datetime.strptime(d_m_y, '%d/%m/%Y').date()
-            if d > self.statement.end_date:
+            if d > self.statement.end_date.date():
                 d = add_years(d, -1)
-            assert d <= self.statement.end_date
+            assert d <= self.statement.end_date.date()
             return d
 
-        logger.debug('Statement line: %r', stmt_line)
+        logger.debug('Statement line: %r', line)
 
         # Remove zero-value notifications
-        if stmt_line.amount == 0:  # pragma: no cover
+        if line.amount == 0:  # pragma: no cover
             return None
 
-        stmt_line.accounting_date = get_date(stmt_line.accounting_date)
-        stmt_line.operation_date = get_date(stmt_line.operation_date)
-        stmt_line.value_date = get_date(stmt_line.value_date)
-        self.try_cache(stmt_line)
-        if not stmt_line.id:
-            stmt_line.date = stmt_line.accounting_date
+        setattr(line, 'accounting_date',
+                get_date(getattr(line, 'accounting_date')))
+        setattr(line, 'operation_date',
+                get_date(getattr(line, 'operation_date')))
+        setattr(line, 'value_date',
+                get_date(getattr(line, 'value_date')))
+        self.try_cache(line)
+        if not line.id and self.statement.account_id is not None:
+            line.date = getattr(line, 'accounting_date')
             account_id = self.statement.account_id
-            stmt_line.id = \
-                generate_unique_transaction_id(stmt_line,
+            line.id = \
+                generate_unique_transaction_id(line,
                                                self.unique_id_sets[account_id])
-            m = re.match(r'([0-9a-f]+)(-\d+)?$', stmt_line.id)
+            m = re.match(r'([0-9a-f]+)(-\d+)?$', line.id)
             assert m, "Id should match hexadecimal digits, \
-optionally followed by a minus and a counter: '{}'".format(stmt_line.id)
+optionally followed by a minus and a counter: '{}'".format(line.id)
             if m.group(2):
                 counter = int(m.group(2)[1:])
                 # include counter so the memo gets unique
-                stmt_line.memo = stmt_line.memo + ' #' + str(counter + 1)
+                if line.memo:
+                    line.memo = line.memo + ' #' + str(counter + 1)
 
-        return stmt_line
+        return line
 
 
 class Plugin(BasePlugin):
