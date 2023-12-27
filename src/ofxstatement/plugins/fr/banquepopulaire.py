@@ -358,22 +358,18 @@ class Parser(BaseStatementParser[BaseStatementLine]):
         account_id: str = str(self.statement.account_id)
         key: TransactionKey
         data: TransactionData
-
         check_no: Optional[str]
         name: Optional[str]
+        # see cases 1 till 3 above
+        min_case: int = 1
+        max_case: int = 3
+
         if stmt_line.payee == 'VIREMENT SEPA':
             check_no = stmt_line.check_no
             name = stmt_line.memo
         else:
             check_no = stmt_line.check_no
             name = None  # stmt_line.payee
-
-        # see cases 1 till 3 above
-        min_case: int = 1
-        max_case: int = 3
-
-        if not check_no and not name:
-            return
 
         if check_no and name:
             pass
@@ -382,8 +378,11 @@ class Parser(BaseStatementParser[BaseStatementLine]):
         elif name:
             min_case = 2
             max_case = 2
+        else:
+            return
 
         # we should start with the most specific key
+        # for case in range(max_case, max_case - 1, -1):  try the most specific
         for case in range(max_case, min_case - 1, -1):
             # The PDF may differ from the OFX by a different date
             # or a switch from payee to memo or otherwise: forget them
@@ -400,8 +399,8 @@ class Parser(BaseStatementParser[BaseStatementLine]):
 
                 if key in self.cache:
                     data = self.cache[key]
-                    logger.info('Found data %r for key %r',
-                                data, key)
+                    logger.info('Found id (%s)\nstatement line: %r\nkey: %r\ndata: %r',  # nopep8
+                                data.id, stmt_line, key, data)
                     stmt_line.date = datetime.combine(dt, datetime.min.time())
                     stmt_line.id = data.id
                     stmt_line.payee = data.name
