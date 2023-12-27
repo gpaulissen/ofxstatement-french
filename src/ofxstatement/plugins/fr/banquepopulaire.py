@@ -77,8 +77,44 @@ class TransactionKey(NamedTuple):
 
     So we do not know from the OFX whether it is a VIREMENT SEPA or not and
     therefore we will add two keys:
-    - one with CHECKNUM from the OFX and NAME empty
-    - one with CHECKNUM empty and the NAME from the OFX
+    1. one with CHECKNUM from the OFX and NAME empty
+    2. one with CHECKNUM empty and the NAME from the OFX
+
+    Update 2023-12-27
+
+    Now this case in file tests/samples/BPACA_OP_20220828.ofx:
+
+    <STMTTRN>
+    <TRNTYPE>DEBIT
+    <DTPOSTED>20220803
+    <TRNAMT>-150.00
+    <FITID>202200800003BD27
+    <CHECKNUM>9W8HMCI
+    <NAME>020822 CB****6516
+    <MEMO>SNCF INTERNET  75PARIS 10
+    </STMTTRN>
+
+    <STMTTRN>
+    <TRNTYPE>DEBIT
+    <DTPOSTED>20220803
+    <TRNAMT>-150.00
+    <FITID>202200800004BD27
+    <CHECKNUM>9W8HMCJ
+    <NAME>020822 CB****6516
+    <MEMO>SNCF INTERNET  75PARIS 10
+    </STMTTRN>
+
+    This results in an error since the key does not have CHECKNUM:
+
+    Different transaction data found.
+    key: TransactionKey(account_id='99999999999', checknum=None, dtposted=datetime.date(2022, 8, 3), trnamt=Decimal('-150.00'), name='020822 CB****6516')  # nopep8
+    new: TransactionData(ofx_file='BPACA_OP_20220828.ofx', id='202200800003BD27', name='020822 CB****6516', memo='SNCF INTERNET 75PARIS 10')  # nopep8
+    old: TransactionData(ofx_file='BPACA_OP_20220828.ofx', id='202200800004BD27', name='020822 CB****6516', memo='SNCF INTERNET 75PARIS 10')  # nopep8
+    differences: {('id', '202200800004BD27'), ('id', '202200800003BD27')}
+
+    So clearly we have to add another case:
+    3. one with CHECKNUM and NAME from the OFX
+
     """
     account_id: str
     checknum: Optional[str]
@@ -92,6 +128,17 @@ class TransactionData(NamedTuple):
     id: str
     name: Optional[str]
     memo: Optional[str]
+
+    @staticmethod
+    def merge(src: 'TransactionData',
+              dst: 'TransactionData') -> 'TransactionData':
+        # prefer id without a space
+        if ' ' in src.id and ' ' not in dst.id:
+            return TransactionData.merge(dst, src)
+        return TransactionData(src.ofx_file,
+                               src.id,
+                               src.name if src.name is not None else dst.name,
+                               src.memo if src.memo is not None else dst.memo)
 
 
 class Parser(BaseStatementParser[BaseStatementLine]):
@@ -195,30 +242,21 @@ class Parser(BaseStatementParser[BaseStatementLine]):
                   amount: Optional[Decimal],
                   payee: Optional[str],
                   memo: Optional[str]) -> None:
-        """Set the transaction"""
-        if check_no and payee:
-            self.add_cache(ofx_file,
-                           id,
-                           account_id,
-                           None,
-                           dtposted,
-                           amount,
-                           payee,
-                           memo)
-        key: TransactionKey
+        """Set the transaction: up to three possible keys may be added"""
         assert check_no or payee
-        if check_no:
-            key = Parser.transaction_key(account_id,
-                                         check_no,
-                                         dtposted,
-                                         amount,
-                                         None)
+
+        # see cases 1 till 3 above
+        min_case: int = 1
+        max_case: int = 3
+
+        if check_no and payee:
+            pass
+        elif check_no:
+            max_case = 1
         elif payee:
-            key = Parser.transaction_key(account_id,
-                                         None,
-                                         dtposted,
-                                         amount,
-                                         payee)
+            min_case = 2
+            max_case = 2
+
         data: TransactionData = Parser.transaction_data(ofx_file,
                                                         id,
                                                         payee,
@@ -227,24 +265,38 @@ class Parser(BaseStatementParser[BaseStatementLine]):
         if account_id not in self.unique_id_sets:
             self.unique_id_sets[account_id] = set()
 
-        msg: str = 'key (%r) and data (%r)' % (key, data)
-
         self.unique_id_sets[account_id].add(id)
 
-        found: TransactionData = self.cache.get(key, data)
+        for case in range(min_case, max_case + 1):
+            key: TransactionKey = Parser.transaction_key(account_id,
+                                                         check_no if case != 2 else None,  # nopep8
+                                                         dtposted,
+                                                         amount,
+                                                         payee if case != 1 else None)  # nopep8
 
-        differences = found._asdict().items() ^ data._asdict().items()
-        different_attributes = set([k for k, v in differences])
+            msg: str = 'key (%r) and data (%r)' % (key, data)
 
-        # only ofx_file may differ
-        if found != data and different_attributes != set(['ofx_file']):
-            raise ValidationError(
-                '\nDifferent transaction data found.\nkey: %r\nnew: %r\nold: %r\ndifferences: %r\ndifferent attributes: %r' %  # nopep8
-                (key, data, found, differences, different_attributes), self)
+            found: TransactionData = self.cache.get(key, data)
 
-        self.cache[key] = data
+            differences = found._asdict().items() ^ data._asdict().items()
+            different_attributes = set([k for k, v in differences])
 
-        logger.debug('Adding %s', msg)
+            if found == data:
+                self.cache[key] = data  # new data
+            elif different_attributes.issubset(set(['ofx_file', 'id'])):
+                # merge old and new data (new gets precedence but only if defined)  # nopep8
+                result: TransactionData = TransactionData.merge(data, found)
+                logger.warning("Merging transaction data\nsrc: %r\ndst: %r\nres: %r",  # nopep8
+                               data,
+                               found,
+                               result)
+                self.cache[key] = result
+            else:
+                raise ValidationError(
+                    '\nDifferent transaction data found.\nkey: %r\nnew: %r\nold: %r\ndifferences: %r\ndifferent attributes: %r' %  # nopep8
+                    (key, data, found, differences, different_attributes), self)  # nopep8
+
+            logger.debug('Adding %s', msg)
 
     @staticmethod
     def transaction_key(account_id: str,
