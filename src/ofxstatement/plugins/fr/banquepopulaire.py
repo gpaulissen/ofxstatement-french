@@ -286,10 +286,10 @@ class Parser(BaseStatementParser[BaseStatementLine]):
             elif different_attributes.issubset(set(['ofx_file', 'id'])):
                 # merge old and new data (new gets precedence but only if defined)  # nopep8
                 result: TransactionData = TransactionData.merge(data, found)
-                logger.warning("Merging transaction data\nsrc: %r\ndst: %r\nres: %r",  # nopep8
-                               data,
-                               found,
-                               result)
+                logger.info("Merging transaction data\nsrc: %r\ndst: %r\nres: %r",  # nopep8
+                            data,
+                            found,
+                            result)
                 self.cache[key] = result
             else:
                 raise ValidationError(
@@ -359,38 +359,56 @@ class Parser(BaseStatementParser[BaseStatementLine]):
         key: TransactionKey
         data: TransactionData
 
-        # The PDF may differ from the OFX by a different date
-        # or a switch from payee to memo or otherwise: forget them
-        for dt in [stmt_line.accounting_date,
-                   stmt_line.operation_date,
-                   stmt_line.value_date]:
-            assert type(dt) is date, "Type of {} should be date".format(dt)
-            check_no: Optional[str]
-            name: Optional[str]
-            if stmt_line.payee == 'VIREMENT SEPA' and not stmt_line.check_no:
-                check_no = None
-                name = stmt_line.memo
-            else:
-                check_no = stmt_line.check_no
-                name = None
+        check_no: Optional[str]
+        name: Optional[str]
+        if stmt_line.payee == 'VIREMENT SEPA':
+            check_no = stmt_line.check_no
+            name = stmt_line.memo
+        else:
+            check_no = stmt_line.check_no
+            name = None  # stmt_line.payee
 
-            key = Parser.transaction_key(account_id,
-                                         check_no,
-                                         dt,
-                                         stmt_line.amount,
-                                         name)
+        # see cases 1 till 3 above
+        min_case: int = 1
+        max_case: int = 3
 
-            if key in self.cache:
-                data = self.cache[key]
-                logger.debug('Found data %r for key %r',
-                             data, key)
-                stmt_line.date = datetime.combine(dt, datetime.min.time())
-                stmt_line.id = data.id
-                stmt_line.payee = data.name
-                stmt_line.memo = data.memo
-                return
-            else:
-                logger.debug('Did not find value for key %r', key)
+        if not check_no and not name:
+            return
+
+        if check_no and name:
+            pass
+        elif check_no:
+            max_case = 1
+        elif name:
+            min_case = 2
+            max_case = 2
+
+        # we should start with the most specific key
+        for case in range(max_case, min_case - 1, -1):
+            # The PDF may differ from the OFX by a different date
+            # or a switch from payee to memo or otherwise: forget them
+            for dt in [stmt_line.accounting_date,
+                       stmt_line.operation_date,
+                       stmt_line.value_date]:
+                assert type(dt) is date, "Type of {} should be date".format(dt)
+
+                key = Parser.transaction_key(account_id,
+                                             check_no if case != 2 else None,  # nopep8,
+                                             dt,
+                                             stmt_line.amount,
+                                             name if case != 1 else None)  # nopep8
+
+                if key in self.cache:
+                    data = self.cache[key]
+                    logger.info('Found data %r for key %r',
+                                data, key)
+                    stmt_line.date = datetime.combine(dt, datetime.min.time())
+                    stmt_line.id = data.id
+                    stmt_line.payee = data.name
+                    stmt_line.memo = data.memo
+                    return
+                else:
+                    logger.debug('Did not find value for key %r', key)
 
         if not self.cache_printed:
             self.print_cache('try_cache: no data found')
