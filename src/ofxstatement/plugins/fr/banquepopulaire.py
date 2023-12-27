@@ -247,7 +247,7 @@ class Parser(BaseStatementParser[BaseStatementLine]):
 
         # see cases 1 till 3 above
         min_case: int = 1
-        max_case: int = 3
+        max_case: int = 2  # 3
 
         if check_no and payee:
             pass
