@@ -9,9 +9,7 @@ import os
 import glob
 from contextlib import contextmanager
 from decimal import Decimal
-from datetime import date
-from datetime import datetime
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from subprocess import check_output, CalledProcessError
 import logging
 
@@ -19,11 +17,12 @@ from bs4 import BeautifulSoup
 
 from ofxstatement.plugin import Plugin as BasePlugin
 from ofxstatement.parser import StatementParser as BaseStatementParser
-from ofxstatement.statement import StatementLine
+from ofxstatement.statement import Statement as BaseStatement
+from ofxstatement.statement import StatementLine as BaseStatementLine
 from ofxstatement.statement import generate_unique_transaction_id
 from ofxstatement.exceptions import ValidationError
 
-from ofxstatement.plugins.fr.statement import Statement
+from ofxstatement.plugins.fr.statement import Statement, StatementLine
 
 
 # Need Python 3 for super() syntax
@@ -95,7 +94,7 @@ class TransactionData(NamedTuple):
     memo: Optional[str]
 
 
-class Parser(BaseStatementParser[StatementLine]):
+class Parser(BaseStatementParser[BaseStatementLine]):
     statement: Statement
     fin: Iterable[str]
     unique_id_sets: Dict[str, Set[str]]
@@ -232,10 +231,16 @@ class Parser(BaseStatementParser[StatementLine]):
 
         self.unique_id_sets[account_id].add(id)
 
-        if self.cache.get(key, data) != data:  # pragma: no cover
-            logger.warning('Already found this data (%r) while adding %s',
-                           self.cache.get(key),
-                           msg)
+        found: TransactionData = self.cache.get(key, data)
+
+        differences = found._asdict().items() ^ data._asdict().items()
+        different_attributes = set([k for k, v in differences])
+
+        # only ofx_file may differ
+        if found != data and different_attributes != set(['ofx_file']):
+            raise ValidationError(
+                '\nDifferent transaction data found.\nkey: %r\nnew: %r\nold: %r\ndifferences: %r\ndifferent attributes: %r' %  # nopep8
+                (key, data, found, differences, different_attributes), self)
 
         self.cache[key] = data
 
@@ -304,9 +309,9 @@ class Parser(BaseStatementParser[StatementLine]):
 
         # The PDF may differ from the OFX by a different date
         # or a switch from payee to memo or otherwise: forget them
-        for dt in [getattr(stmt_line, 'accounting_date'),
-                   getattr(stmt_line, 'operation_date'),
-                   getattr(stmt_line, 'value_date')]:
+        for dt in [stmt_line.accounting_date,
+                   stmt_line.operation_date,
+                   stmt_line.value_date]:
             assert type(dt) is date, "Type of {} should be date".format(dt)
             check_no: Optional[str]
             name: Optional[str]
@@ -341,7 +346,7 @@ class Parser(BaseStatementParser[StatementLine]):
 
         return
 
-    def parse(self) -> Statement:
+    def parse(self) -> BaseStatement:
         """Main entry point for parsers
 
         super() implementation will call to split_records and parse_record to
@@ -350,8 +355,7 @@ class Parser(BaseStatementParser[StatementLine]):
 
         self.read_cache()
 
-        # Python 3 needed
-        stmt: Statement = Statement(super().parse())
+        stmt: Statement = Statement.copy_from_base(super().parse())
 
         stmt.currency = 'EUR'
         if stmt.end_date:
@@ -361,7 +365,7 @@ class Parser(BaseStatementParser[StatementLine]):
 
         return stmt
 
-    def split_records(self) -> Iterator[StatementLine]:
+    def split_records(self) -> Iterator[BaseStatementLine]:
         """Return iterable object consisting of a line per transaction.
 
         It starts by determining in order):
@@ -714,20 +718,22 @@ COMPTA|                                          |
                     payee = None
                     logger.debug('After adding payee to the row: %s', str(row))
 
-                stmt_line = StatementLine()
+                check_no: Optional[str] = None
                 if len(row) >= 6:
                     pos = line.find(row[-4])
                     assert check_no_pos is not None
                     if pos >= check_no_pos:
-                        stmt_line.check_no = row[-4]
+                        check_no = row[-4]
                         logger.debug('Setting check_no: %s', row[-4])
                     else:
                         logger.debug('Skip setting check_no')
 
-                setattr(stmt_line, 'accounting_date', row[0])
-                setattr(stmt_line, 'operation_date', row[-2])
-                setattr(stmt_line, 'value_date', row[-3])
-                stmt_line.amount = cast(Decimal, row[-1])
+                stmt_line = StatementLine(check_no,
+                                          cast(Decimal, row[-1]),
+                                          row[0],
+                                          row[-2],
+                                          row[-3])
+
                 assert credit_pos is not None
                 transaction_type = \
                     get_debit_credit(line, row[-1], credit_pos)
@@ -741,6 +747,7 @@ COMPTA|                                          |
 
                 stmt_line.payee = row[1]
                 stmt_line.memo = ''
+                assert stmt_line.amount is not None
                 stmt_line.amount = get_amount(stmt_line.amount,
                                               transaction_type)
                 logger.debug('Statement line: %r', stmt_line)
@@ -768,29 +775,9 @@ COMPTA|                                          |
         # see function get_date() below
         return (sl for sl in stmt_lines)
 
-    def parse_record(self, line: StatementLine) -> Optional[StatementLine]:
-        """Parse given transaction line and return StatementLine object
+    def parse_record(self, line: BaseStatementLine) -> Optional[BaseStatementLine]:  # nopep8
+        """Parse given transaction line and return BaseStatementLine object
         """
-        def add_years(d: date, years: int) -> date:
-            """Return a date that's `years` years after the date
-            object `d`. Return the same calendar date (month and day) in the
-            destination year, if it exists, otherwise use the following day
-            (thus changing February 29 to March 1).
-
-            """
-            return d.replace(year=d.year + years, month=3, day=1) \
-                if d.month == 2 and d.day == 29 \
-                else d.replace(year=d.year + years)
-
-        def get_date(d_m: str) -> date:
-            assert self.statement.end_date
-            # Without a year it will be 1900 so add the year
-            d_m_y: str = "{}/{}".format(d_m, self.statement.end_date.year)
-            d: date = datetime.strptime(d_m_y, '%d/%m/%Y').date()
-            if d > self.statement.end_date.date():
-                d = add_years(d, -1)
-            assert d <= self.statement.end_date.date()
-            return d
 
         logger.debug('Statement line: %r', line)
 
@@ -798,15 +785,15 @@ COMPTA|                                          |
         if line.amount == 0:  # pragma: no cover
             return None
 
-        setattr(line, 'accounting_date',
-                get_date(getattr(line, 'accounting_date')))
-        setattr(line, 'operation_date',
-                get_date(getattr(line, 'operation_date')))
-        setattr(line, 'value_date',
-                get_date(getattr(line, 'value_date')))
+        assert self.statement.end_date
+        # Convert the parent class instance to a child class instance
+        line = StatementLine.copy_from_base(line)
+
+        line.end_date = self.statement.end_date
         self.try_cache(line)
         if not line.id and self.statement.account_id is not None:
-            line.date = getattr(line, 'accounting_date')
+            line.date = datetime.combine(line.accounting_date,
+                                         datetime.min.time())
             account_id = self.statement.account_id
             line.id = \
                 generate_unique_transaction_id(line,

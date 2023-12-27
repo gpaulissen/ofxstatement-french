@@ -56,21 +56,21 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[0].amount, Decimal('55.00'))
         self.assertEqual(stmt.lines[0].payee, 'VIREMENT SEPA')
         self.assertEqual(stmt.lines[0].memo, 'EVI M ------- -----')
-        self.assertEqual(stmt.lines[0].date, d(parser, "2019-06-06"))
+        self.assertEqual(stmt.lines[0].date, dt(parser, "2019-06-06"))
 
         self.assertEqual(stmt.lines[1].amount, Decimal('-39.57'))
         self.assertEqual(stmt.lines[1].payee, 'PRLV SEPA ---- ----')
         self.assertEqual(stmt.lines[1].memo,
                          '---------- --------- 999999999' + ' ' +
                          'xxxxxxxxxxxxxxxxxx')
-        self.assertEqual(stmt.lines[1].date, d(parser, "2019-06-07"))
+        self.assertEqual(stmt.lines[1].date, dt(parser, "2019-06-07"))
         self.assertEqual(stmt.lines[1].check_no, 'XXXXXXX')
 
         self.assertEqual(stmt.lines[2].amount, Decimal('-320.00'))
         self.assertEqual(stmt.lines[2].payee, 'VIREMENT')
         self.assertEqual(stmt.lines[2].memo,
                          'VIR --------------------')
-        self.assertEqual(stmt.lines[2].date, d(parser, "2019-06-09"))
+        self.assertEqual(stmt.lines[2].date, dt(parser, "2019-06-09"))
         self.assertEqual(stmt.lines[2].check_no, '9999999')
 
         self.assertEqual(stmt.lines[3].amount, Decimal('-80.00'))
@@ -78,14 +78,14 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[3].memo,
                          'XXXXXXXX' + ' ' +
                          'xxxxxxxxxxxxxxx')
-        self.assertEqual(stmt.lines[3].date, d(parser, "2019-06-11"))
+        self.assertEqual(stmt.lines[3].date, dt(parser, "2019-06-11"))
         self.assertEqual(stmt.lines[3].check_no, '9999999')
 
         self.assertEqual(stmt.lines[4].amount, Decimal('3500.00'))
         self.assertEqual(stmt.lines[4].payee, 'VIREMENT SEPA')
         self.assertEqual(stmt.lines[4].memo,
                          'EVI -----------------')
-        self.assertEqual(stmt.lines[4].date, d(parser, "2019-06-11"))
+        self.assertEqual(stmt.lines[4].date, dt(parser, "2019-06-11"))
         self.assertIsNone(stmt.lines[4].check_no)
 
         self.assertEqual(stmt.lines[5].amount, Decimal('-30.99'))
@@ -93,28 +93,28 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[5].memo,
                          '--------------------------' + ' ' +
                          '-----------')
-        self.assertEqual(stmt.lines[5].date, d(parser, "2019-06-13"))
+        self.assertEqual(stmt.lines[5].date, dt(parser, "2019-06-13"))
         self.assertEqual(stmt.lines[5].check_no, 'XXXXXXX')
 
         self.assertEqual(stmt.lines[6].amount, Decimal('-4.10'))
         self.assertEqual(stmt.lines[6].payee, 'FRAIS/VIREMENT')
         self.assertEqual(stmt.lines[6].memo,
                          '00001 OPERATION')
-        self.assertEqual(stmt.lines[6].date, d(parser, "2019-06-13"))
+        self.assertEqual(stmt.lines[6].date, dt(parser, "2019-06-13"))
         self.assertEqual(stmt.lines[6].check_no, '9999999')
 
         self.assertEqual(stmt.lines[7].amount, Decimal('-3500.00'))
         self.assertEqual(stmt.lines[7].payee, 'VIREMENT SEPA')
         self.assertEqual(stmt.lines[7].memo,
                          'VIR SARL ------------')
-        self.assertEqual(stmt.lines[7].date, d(parser, "2019-06-13"))
+        self.assertEqual(stmt.lines[7].date, dt(parser, "2019-06-13"))
         self.assertEqual(stmt.lines[7].check_no, '9999999')
 
         self.assertEqual(stmt.lines[14].amount, Decimal('2500.00'))
         self.assertEqual(stmt.lines[14].payee, 'VIREMENT SEPA')
         self.assertEqual(stmt.lines[14].memo,
                          'EVI -------- ---------')
-        self.assertEqual(stmt.lines[14].date, d(parser, "2019-06-19"))
+        self.assertEqual(stmt.lines[14].date, dt(parser, "2019-06-19"))
         self.assertIsNone(stmt.lines[14].check_no)
 
         self.assertEqual(stmt.lines[15].amount, Decimal('-43.70'))
@@ -122,14 +122,14 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[15].memo,
                          '---------------------------' + ' ' +
                          '-------------------')
-        self.assertEqual(stmt.lines[15].date, d(parser, "2019-06-20"))
+        self.assertEqual(stmt.lines[15].date, dt(parser, "2019-06-20"))
         self.assertEqual(stmt.lines[15].check_no, 'XXXXXXX')
 
         self.assertEqual(stmt.lines[21].amount, Decimal('-123.00'))
         self.assertEqual(stmt.lines[21].payee, '------ ----------')
         self.assertEqual(stmt.lines[21].memo,
                          '------ ------------ -----')
-        self.assertEqual(stmt.lines[21].date, d(parser, "2019-06-25"))
+        self.assertEqual(stmt.lines[21].date, dt(parser, "2019-06-25"))
         self.assertEqual(stmt.lines[21].check_no, 'XXXXXXX')
 
         self.assertEqual(stmt.lines[22].amount, Decimal('-7.18'))
@@ -137,7 +137,7 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[22].memo,
                          '-------- ----------------------' + ' ' +
                          'CONTRAT -------------')
-        self.assertEqual(stmt.lines[22].date, d(parser, "2019-06-26"))
+        self.assertEqual(stmt.lines[22].date, dt(parser, "2019-06-26"))
         self.assertEqual(stmt.lines[22].check_no, '9999999')
 
         self.assertEqual(stmt.lines[23].amount, Decimal('-12.18'))
@@ -145,28 +145,28 @@ class ParserTest(TestCase):
         self.assertEqual(stmt.lines[23].memo,
                          '-------- ----------------------' + ' ' +
                          '------- -------------')
-        self.assertEqual(stmt.lines[23].date, d(parser, "2019-06-26"))
+        self.assertEqual(stmt.lines[23].date, dt(parser, "2019-06-26"))
         self.assertEqual(stmt.lines[23].check_no, '9999999')
 
         self.assertEqual(stmt.lines[30].amount, Decimal('-200.00'))
         self.assertEqual(stmt.lines[30].payee, 'VIR MME -------- -------')
         self.assertEqual(stmt.lines[30].memo,
                          'rbst apport sur compte courant')
-        self.assertEqual(stmt.lines[30].date, d(parser, "2019-06-30"))
+        self.assertEqual(stmt.lines[30].date, dt(parser, "2019-06-30"))
         self.assertEqual(stmt.lines[30].check_no, '9999999')
 
         self.assertEqual(stmt.lines[31].amount, Decimal('6000.00'))
         self.assertEqual(stmt.lines[31].payee, 'VIREMENT SEPA')
         self.assertEqual(stmt.lines[31].memo,
                          'EVI CASDEN B.P ENGT')
-        self.assertEqual(stmt.lines[31].date, d(parser, "2019-07-01"))
+        self.assertEqual(stmt.lines[31].date, dt(parser, "2019-07-01"))
         self.assertIsNone(stmt.lines[31].check_no)
 
         self.assertEqual(stmt.lines[36].amount, Decimal('-2750.00'))
         self.assertEqual(stmt.lines[36].payee, 'VIR M -------- ---------')
         self.assertEqual(stmt.lines[36].memo,
                          'xxxx')
-        self.assertEqual(stmt.lines[36].date, d(parser, "2019-07-02"))
+        self.assertEqual(stmt.lines[36].date, dt(parser, "2019-07-02"))
         self.assertEqual(stmt.lines[36].check_no, '9999999')
 
     def test_simple(self):
