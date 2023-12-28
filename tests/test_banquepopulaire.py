@@ -5,12 +5,14 @@ from decimal import Decimal
 from datetime import datetime
 import pytest
 import logging
+from difflib import unified_diff
 
 from ofxstatement.exceptions import ValidationError
-
 from ofxstatement.plugins.fr.banquepopulaire import Plugin
+from ofxstatement import ofx
 
 logger = logging.getLogger(__name__)
+here = os.path.dirname(__file__)
 
 
 def dt(parser, s: str):
@@ -47,11 +49,11 @@ class ParserTest(TestCase):
         for idx, line in enumerate(stmt.lines, start=0):
             assert isinstance(idx, int)
             if idx in [0, 4, 8, 9, 12, 14, 20, 29, 31]:
-                self.assertIsNone(stmt.lines[idx].check_no,
-                                  'line[%d]: %s' % (idx, stmt.lines[idx]))
+                self.assertIsNone(line.check_no,
+                                  'line[%d]: %s' % (idx, line))
             else:
-                self.assertIsNotNone(stmt.lines[idx].check_no,
-                                     'line[%d]: %s' % (idx, stmt.lines[idx]))
+                self.assertIsNotNone(line.check_no,
+                                     'line[%d]: %s' % (idx, line))
 
         self.assertEqual(stmt.lines[0].amount, Decimal('55.00'))
         self.assertEqual(stmt.lines[0].payee, 'VIREMENT SEPA')
@@ -171,21 +173,16 @@ class ParserTest(TestCase):
 
     def test_simple(self):
         # Create and configure parser:
-        here = os.path.dirname(__file__)
-
         self._parse(os.path.join(here, 'samples', 'Extrait_de_compte.txt'))
 
     def test_full(self):
         # Create and configure parser:
-        here = os.path.dirname(__file__)
-
         self._parse(os.path.join(here,
                                  'samples',
                                  'Extrait_de_compte_full.txt'))
 
     def test_balance(self):
         # Create and configure parser:
-        here = os.path.dirname(__file__)
         cfg = {'ofx_files': '*.ofx'}
         plugin = Plugin(None, cfg)
         parser = plugin.get_parser(
@@ -232,7 +229,6 @@ class ParserTest(TestCase):
 
     def test_january(self):
         # Create and configure parser:
-        here = os.path.dirname(__file__)
         plugin = Plugin(None, None)
         parser = plugin.get_parser(
             os.path.join(here,
@@ -258,7 +254,6 @@ class ParserTest(TestCase):
 
     def test_january_2021(self):
         # Create and configure parser:
-        here = os.path.dirname(__file__)
         plugin = Plugin(None, {'bank_id': 'CCBPFRPPBDX'})
         parser = plugin.get_parser(
             os.path.join(here,
@@ -286,7 +281,6 @@ class ParserTest(TestCase):
     def test_fail(self):
         """'Parser' object has no attribute 'bank_id'
         """
-        here = os.path.dirname(__file__)
         pdf_filename = os.path.join(here, 'samples', 'blank.pdf')
         parser = Plugin(None, None).get_parser(pdf_filename)
 
@@ -298,7 +292,6 @@ class ParserTest(TestCase):
     @pytest.mark.xfail(raises=ValidationError)
     def test_fail_january_2021(self):
         # Create and configure parser:
-        here = os.path.dirname(__file__)
         plugin = Plugin(None, None)
         parser = plugin.get_parser(
             os.path.join(here,
@@ -314,7 +307,6 @@ class ParserTest(TestCase):
     def test_fail_ofx_files(self):
         """'Parser' object has no attribute 'bank_id'
         """
-        here = os.path.dirname(__file__)
         pdf_filename = os.path.join(here, 'samples', 'blank.pdf')
         cfg = {'ofx_files': '~/*.ofx'}
         plugin = Plugin(None, cfg)
@@ -324,3 +316,86 @@ class ParserTest(TestCase):
         stmt = parser.parse()
 
         stmt.assert_valid()
+
+    def test_20220802(self):
+        """
+        The cache file (BPACA_OP_20220802.ofx) contains FITIDs with spaces
+        so Extrait-de-compte-20220802.pdf.txt too.
+        """
+        cfg = {'ofx_files': 'BPACA_OP_20220717*.ofx,BPACA_OP_20220802.ofx'}
+        plugin = Plugin(None, cfg)
+        base = 'Extrait-de-compte-20220802.pdf'
+        input_file = os.path.join(here, 'samples', f'{base}.txt')
+        output_file_expected = os.path.join(here, 'samples', f'{base}.ofx')
+        # add a dot in front so it will be ignored by VCS
+        output_file_actual = os.path.join(here, 'samples', f'.{base}.ofx')
+        parser = plugin.get_parser(input_file)
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
+
+        for idx, line in enumerate(stmt.lines, start=0):
+            if idx >= 57:
+                self.assertTrue(' ' in line.id)
+            else:
+                self.assertFalse(' ' in line.id)
+
+        # Check file contents
+        with open(output_file_actual, "w") as out:
+            writer = ofx.OfxWriter(stmt)
+            out.write(writer.toxml(pretty=True))
+
+        with open(output_file_expected, "r") as f:
+            expected_lines = f.readlines()
+        with open(output_file_actual, "r") as f:
+            actual_lines = f.readlines()
+
+        diff = list(unified_diff(expected_lines, actual_lines))
+        assert diff == [], "Unexpected file contents:\n" + "".join(diff)
+
+    def test_20220828(self):
+        """
+        The cache file (BPACA_OP_20220802.ofx) contains FITIDs with spaces.
+        The cache file (BPACA_OP_20220828.ofx) does NOT.
+        So Extrait-de-compte-20220802.pdf.txt neither.
+        """
+        cfg = {'ofx_files': 'BPACA_OP_202208??.ofx'}
+        plugin = Plugin(None, cfg)
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait-de-compte-20220802.pdf.txt'))
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
+
+        for idx, line in enumerate(stmt.lines, start=0):
+            if idx == 57:
+                self.assertTrue(' ' in line.id)
+            else:
+                self.assertFalse(' ' in line.id)
+
+    def test_20220902(self):
+        """
+        The cache file (BPACA_OP_20220802.ofx) contains FITIDs with spaces.
+        The cache file (BPACA_OP_20220828.ofx) does NOT.
+        So Extrait-de-compte-20220902.pdf.txt neither.
+        """
+        cfg = {'ofx_files': 'BPACA_OP_202208??.ofx'}
+        plugin = Plugin(None, cfg)
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait-de-compte-20220902.pdf.txt'))
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()
+
+        for idx, line in enumerate(stmt.lines, start=0):
+            self.assertFalse(' ' in line.id)

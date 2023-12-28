@@ -17,3 +17,4 @@ htmlcov
 .mypy_cache
 tests/.DS_Store
 .DS_Store
+tests/samples/.Extrait-de-compte-20220802.pdf.ofx
