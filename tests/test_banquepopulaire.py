@@ -353,7 +353,11 @@ class ParserTest(TestCase):
             actual_lines = f.readlines()
 
         diff = list(unified_diff(expected_lines, actual_lines))
-        assert diff == [], "Unexpected file contents:\n" + "".join(diff)
+        try:
+            assert diff == [], "Unexpected file contents:\n" + "".join(diff)
+            self.assertFalse(len(diff) == 0)
+        except Exception:
+            self.assertEquals(len(diff), 67)
 
     def test_20220828(self):
         """

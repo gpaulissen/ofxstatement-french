@@ -200,16 +200,15 @@ class StatementLine(BaseStatementLine):
             self.date = datetime.combine(max_dt, datetime.min.time())
             self.id = data.id
             if self.payee == 'VIREMENT SEPA' and not self.check_no:
+                # overwrite these attributes
                 self.check_no = data.checknum
-                if not self.memo:
-                    self.memo = data.name
+                self.payee = data.name
+                self.memo = data.memo
             else:
-                if not self.check_no:
-                    self.check_no = data.checknum
-                if not self.payee:
-                    self.payee = data.name
-                if not self.memo:
-                    self.memo = data.memo
+                # set these attributes if empty
+                self.check_no = data.checknum if not self.check_no else self.check_no  # nopep8
+                self.payee = data.name if not self.payee else self.payee
+                self.memo = data.memo if not self.memo else self.memo
 
         if not statement_cache.printed:
             statement_cache.print('try_cache: no data found')
@@ -346,18 +345,6 @@ class TransactionData(NamedTuple):
                                None if memo == '' else memo,
                                id,
                                ofx_file)
-
-    @staticmethod
-    def merge(src: 'TransactionData',
-              dst: 'TransactionData') -> 'TransactionData':
-        # prefer id without a space
-        if ' ' in src.id and ' ' not in dst.id:
-            return TransactionData.merge(dst, src)
-        return TransactionData(src.checknum if src.checknum else dst.checknum,
-                               src.name if src.name is not None else dst.name,
-                               src.memo if src.memo is not None else dst.memo,
-                               src.id,
-                               src.ofx_file)
 
     def match(self, td: 'TransactionData') -> int:
         def cmp(i1: Optional[Any], i2: Optional[Any]) -> int:
