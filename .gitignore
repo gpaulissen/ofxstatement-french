@@ -16,3 +16,4 @@ htmlcov
 *.log
 .mypy_cache
 tests/.DS_Store
+.DS_Store
