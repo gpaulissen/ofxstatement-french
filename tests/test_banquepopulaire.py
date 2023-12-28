@@ -221,9 +221,10 @@ class ParserTest(TestCase):
                 self.assertEqual(line.id, str(idx))
                 # These values are taken from the cache
                 self.assertEqual(line.date, dt(parser, "2019-06-20"))
-                self.assertEqual(line.payee, 'I DO NOT LIKE COM INTERVENTION')
+                # fields are not overwritten unless empty
+                self.assertEqual(line.payee, 'COM INTERVENTION')
                 self.assertEqual(line.memo,
-                                 '9999999999999999999999 1 OPERATION')
+                                 'XXXXXXXX 9999999999999999999999 1 OPERATION')
             else:
                 # Statement lines 1, 4, 5 and 6 should have that FITID,
                 # so line 5 has FITID 5.

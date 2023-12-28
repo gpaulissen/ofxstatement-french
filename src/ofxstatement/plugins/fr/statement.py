@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
 
+THRESHOLD = 2 ** 2
+
+
 class Statement(BaseStatement):
     def __init__(self) -> None:
         super().__init__()
@@ -116,6 +119,100 @@ class StatementLine(BaseStatementLine):
         assert self.value_date_d_m is not None
         return self.get_date(self.value_date_d_m)
 
+    def adjust(self,
+               statement_cache: 'StatementCache',
+               account_id: str) -> bool:
+        check_no: Optional[str]
+        payee: Optional[str]
+        memo: Optional[str]
+        dates: Set[date] = set((self.accounting_date,
+                                self.operation_date,
+                                self.value_date))
+        max_match: int = -1
+        this_match: int
+        max_dt: Optional[date] = None
+        matches: Set[TransactionData] = set()
+
+        if self.payee == 'VIREMENT SEPA':
+            check_no = self.check_no
+            payee = self.memo
+            memo = None
+        else:
+            check_no = self.check_no
+            payee = self.payee
+            memo = self.memo
+
+        target: TransactionData = TransactionData.make(check_no,
+                                                       payee,
+                                                       memo,
+                                                       '',
+                                                       '')
+
+        for idx in range(3):  # max three dates to check for
+            dt: date
+            if idx == 0:
+                dt = self.accounting_date
+            elif idx == 1:
+                dt = self.operation_date
+            else:
+                dt = self.value_date
+
+            if dt not in dates:
+                continue
+
+            dates.remove(dt)
+
+            key: TransactionKey = TransactionKey.make(account_id,
+                                                      dt,
+                                                      self.amount)
+
+            if key in statement_cache.cache:
+                for data in statement_cache.cache[key]:
+                    this_match = data.match(target)
+                    if this_match >= THRESHOLD:
+                        if this_match > max_match:
+                            max_match = this_match
+                            max_dt = dt
+                            # remove previous matches and replace by this one
+                            matches.add(data)
+                        elif this_match == max_match:
+                            # add this one
+                            matches.add(data)
+
+        found: Optional[TransactionData] = None
+
+        if len(matches) > 0:
+            found = matches.pop()
+
+        if max_dt is not None and found is not None:
+            for data in matches:
+                this_match = data.match(found)
+                if this_match >= THRESHOLD:
+                    # the difference is too much: stop
+                    found = None
+                    break
+
+        # still ok?
+        if max_dt is not None and found is not None:
+            if not self.check_no:
+                self.check_no = data.checknum
+            self.date = datetime.combine(max_dt, datetime.min.time())
+            self.id = data.id
+            if self.payee == 'VIREMENT SEPA':
+                if not self.memo:
+                    self.memo = data.name
+            else:
+                if not self.payee:
+                    self.payee = data.name
+                if not self.memo:
+                    self.memo = data.memo
+
+        if not statement_cache.printed:
+            statement_cache.print('try_cache: no data found')
+            statement_cache.printed = True
+
+        return found is not None
+
 
 @contextmanager
 def working_directory(path: str) -> Iterator[Any]:
@@ -138,128 +235,113 @@ def working_directory(path: str) -> Iterator[Any]:
 
 class TransactionKey(NamedTuple):
     """
-    This OFX transaction:
+    A typical OFX transaction record is:
 
-    <STMTTRN>
-    <TRNTYPE>CREDIT
-    <DTPOSTED>20191126
-    <TRNAMT>+248.21
-    <FITID>201901100044BD27
-    <CHECKNUM>F6KJAIV
-    <NAME>EVI DRFIP NOUVELLE AQUIT
-    <MEMO>REMUNERATION DU 11/2019. MINISTE RE : 206 GESTION : 991-033
-    </STMTTRN>
+      <STMTTRN>
+        <TRNTYPE>CREDIT
+        <DTPOSTED>20191126
+        <TRNAMT>+248.21
+        <FITID>201901100044BD27
+        <CHECKNUM>F6KJAIV
+        <NAME>EVI DRFIP NOUVELLE AQUIT
+        <MEMO>REMUNERATION DU 11/2019. MINISTE RE : 206 GESTION : 991-033
+      </STMTTRN>
 
-    will be shown in the PDF as:
+    A matching PDF transaction record may be:
 
-    accounting_date: 26/11/2019
-    payee: VIREMENT SEPA
-    operation_date: 26/11/2019
-    value_date: 26/11/2019
-    amount: 248,21
-    memo: EVI DRFIP NOUVELLE AQUIT
-    check_no: -
+      accounting_date: 26/11/2019
+      payee: VIREMENT SEPA
+      operation_date: 26/11/2019
+      value_date: 26/11/2019
+      amount: 248,21
+      memo: EVI DRFIP NOUVELLE AQUIT
+      check_no: -
 
-    So we do not know from the OFX whether it is a VIREMENT SEPA or not and
-    therefore we will add two keys:
-    1. one with CHECKNUM from the OFX and NAME empty
-    2. one with CHECKNUM empty and the NAME from the OFX
+    The unique key of an OFX transaction is FITID (used by beancount) and
+    this key will be looked up for the PDF transactions since
+    they do not contain this information.
 
-    Update 2023-12-27
+    In order to look up the FITID these properties MUST be the same:
+    1. account id;
+    2. date posted (DTPOSTED);
+    3. transaction amount (TRNAMT).
 
-    Now this case in file tests/samples/BPACA_OP_20220828.ofx:
+    This will be the TransactionKey.
 
-    <STMTTRN>
-    <TRNTYPE>DEBIT
-    <DTPOSTED>20220803
-    <TRNAMT>-150.00
-    <FITID>202200800003BD27
-    <CHECKNUM>9W8HMCI
-    <NAME>020822 CB****6516
-    <MEMO>SNCF INTERNET  75PARIS 10
-    </STMTTRN>
+    For other properties it is more of a fuzzy search
+    with the most important first:
+    4. check number (CHECKNUM);
+    5. counter party (NAME);
+    6. memo (MEMO);
+    7. id (FITID) where a (temporary) id containing spaces ranks the lowest;
 
-    <STMTTRN>
-    <TRNTYPE>DEBIT
-    <DTPOSTED>20220803
-    <TRNAMT>-150.00
-    <FITID>202200800004BD27
-    <CHECKNUM>9W8HMCJ
-    <NAME>020822 CB****6516
-    <MEMO>SNCF INTERNET  75PARIS 10
-    </STMTTRN>
+    This will be the TransactionData.
 
-    This results in an error since the key does not have CHECKNUM:
+    So for each date posted and transaction amount a set of transaction data
+    based on OFX transactions will be stored.
+    The program will abort on duplicates.
 
-    Different transaction data found.
-    key: TransactionKey(account_id='99999999999', checknum=None, dtposted=datetime.date(2022, 8, 3), trnamt=Decimal('-150.00'), name='020822 CB****6516')  # nopep8
-    new: TransactionData(ofx_file='BPACA_OP_20220828.ofx', id='202200800003BD27', name='020822 CB****6516', memo='SNCF INTERNET 75PARIS 10')  # nopep8
-    old: TransactionData(ofx_file='BPACA_OP_20220828.ofx', id='202200800004BD27', name='020822 CB****6516', memo='SNCF INTERNET 75PARIS 10')  # nopep8
-    differences: {('id', '202200800004BD27'), ('id', '202200800003BD27')}
-
-    So clearly we have to add another case:
-    3. one with CHECKNUM and NAME from the OFX
+    Looking up given a PDF transaction:
+    - for the amount and each of the three dates determine the data bucket
+    - determine the highest match with bucket transaction data
+    - if the highest match is below the threshold it will be discarded, i.e.
+      at least check number or counter party must match
 
     """
     account_id: str
-    checknum: Optional[str]
     dtposted: Optional[date]
     trnamt: Optional[Decimal]
-    name: Optional[str]  # for VIREMENT SEPA
 
     @staticmethod
     def make(account_id: str,
-             check_no: Optional[str],
              dtposted: Optional[date],
-             amount: Optional[Decimal],
-             name: Optional[str]) -> 'TransactionKey':
+             amount: Optional[Decimal]) -> 'TransactionKey':
         assert isinstance(account_id, str), \
             "account_id (%s) must be an instance of str" % (type(account_id))
-        assert check_no is None or isinstance(check_no, str), \
-            "check_no (%s) must be an instance of str" % (type(check_no))
         assert dtposted is None or isinstance(dtposted, date), \
             "dtposted (%s) must be an instance of date" % (type(dtposted))
         assert amount is None or isinstance(amount, Decimal), \
             "amount (%s) must be an instance of Decimal" % (type(amount))
-        assert name is None or isinstance(name, str), \
-            "name (%s) must be an instance of str" % (type(name))
 
         return TransactionKey(account_id,
-                              None if check_no == '' else check_no,
                               dtposted,
-                              amount,
-                              None if name == '' else name)
+                              amount)
 
 
 class TransactionData(NamedTuple):
-    ofx_file: str
-    id: str
-    name: Optional[str]
+    checknum: Optional[str]
+    name: Optional[str]  # for VIREMENT SEPA
     memo: Optional[str]
+    id: str
+    ofx_file: str
 
     @staticmethod
-    def make(ofx_file: str,
-             id: str,
+    def make(check_no: Optional[str],
              payee: Optional[str],
-             memo: Optional[str]) -> 'TransactionData':
-        assert isinstance(ofx_file, str), \
-            "ofx_file (%s) must be an instance of str" % (type(ofx_file))
-        assert isinstance(id, str), \
-            "id (%s) must be an instance of str" % (type(id))
+             memo: Optional[str],
+             id: str,
+             ofx_file: str) -> 'TransactionData':
+        assert check_no is None or isinstance(check_no, str), \
+            "check_no (%s) must be an instance of str" % (type(check_no))
         assert payee is None or isinstance(payee, str), \
             "payee (%s) must be an instance of str or None" % (type(payee))
         assert memo is None or isinstance(memo, str), \
             "memo (%s) must be an instance of str or None" % (type(memo))
+        assert isinstance(id, str), \
+            "id (%s) must be an instance of str" % (type(id))
+        assert isinstance(ofx_file, str), \
+            "ofx_file (%s) must be an instance of str" % (type(ofx_file))
 
         # If payee or memo is not empty there may be a whitespace difference
         # so remove multiple whitespace characters by a single one
         payee = ' '.join(payee.split()) if payee else None
         memo = ' '.join(memo.split()) if memo else None
 
-        return TransactionData(ofx_file,
-                               id,
+        return TransactionData(None if check_no == '' else check_no,
                                None if payee == '' else payee,
-                               None if memo == '' else memo)
+                               None if memo == '' else memo,
+                               id,
+                               ofx_file)
 
     @staticmethod
     def merge(src: 'TransactionData',
@@ -267,17 +349,52 @@ class TransactionData(NamedTuple):
         # prefer id without a space
         if ' ' in src.id and ' ' not in dst.id:
             return TransactionData.merge(dst, src)
-        return TransactionData(src.ofx_file,
-                               src.id,
+        return TransactionData(src.checknum if src.checknum else dst.checknum,
                                src.name if src.name is not None else dst.name,
-                               src.memo if src.memo is not None else dst.memo)
+                               src.memo if src.memo is not None else dst.memo,
+                               src.id,
+                               src.ofx_file)
+
+    def match(self, td: 'TransactionData') -> int:
+        def cmp(i1: Optional[Any], i2: Optional[Any]) -> int:
+            if not 11 and not i2:
+                return 0
+            elif not 11:
+                return -1
+            elif not i2:
+                return +1
+            elif str(i1) < str(i2):
+                return -2
+            elif str(i1) > str(i2):
+                return +2
+            else:
+                return 0
+
+        results = [cmp(' ' not in self.id, True),
+                   cmp(self.memo, td.memo),
+                   cmp(self.name, td.name),
+                   cmp(self.checknum, td.checknum)]
+        result: int = 0
+
+        for idx in range(len(results)):
+            if results[idx] in (0, 1):
+                # self.<item> = td.<item> or not td.item
+                # This means that self.<item> matches td.<item>
+                result = result + idx ** 2
+            elif idx == 3:
+                # this (checknum) must match
+                result = 0
+                break
+
+        logger.info("match(\nself=%s,\ntd  =%s\n) = %d", self, td, result)
+        return result
 
 
 class StatementCache(object):
     unique_id_sets: Dict[str, Set[str]]
     ofx_files: Optional[str]
     cwd: str
-    cache: Dict[TransactionKey, TransactionData]
+    cache: Dict[TransactionKey, Set[TransactionData]]
     printed: bool
 
     def __init__(self,
@@ -365,132 +482,37 @@ class StatementCache(object):
             amount: Optional[Decimal],
             payee: Optional[str],
             memo: Optional[str]) -> None:
-        """Set the transaction: up to three possible keys may be added"""
-        assert check_no or payee
-
-        # see cases 1 till 3 above
-        min_case: int = 1
-        max_case: int = 2  # 3
-
-        if check_no and payee:
-            pass
-        elif check_no:
-            max_case = 1
-        elif payee:
-            min_case = 2
-            max_case = 2
-
-        data: TransactionData = TransactionData.make(ofx_file,
-                                                     id,
+        """Add the transaction"""
+        key: TransactionKey = TransactionKey.make(account_id,
+                                                  dtposted,
+                                                  amount)
+        data: TransactionData = TransactionData.make(check_no,
                                                      payee,
-                                                     memo)
+                                                     memo,
+                                                     id,
+                                                     ofx_file)
+        msg: str = 'key (%r) and data (%r)' % (key, data)
 
         if account_id not in self.unique_id_sets:
             self.unique_id_sets[account_id] = set()
-
         self.unique_id_sets[account_id].add(id)
 
-        for case in range(min_case, max_case + 1):
-            key: TransactionKey = TransactionKey.make(account_id,
-                                                      check_no if case != 2 else None,  # nopep8
-                                                      dtposted,
-                                                      amount,
-                                                      payee if case != 1 else None)  # nopep8
+        if key not in self.cache:
+            self.cache[key] = set()
+        assert data not in self.cache[key], \
+            'data (%r) already part of this bucket (%r)' % (data, key)
+        self.cache[key].add(data)
 
-            msg: str = 'key (%r) and data (%r)' % (key, data)
-
-            found: TransactionData = self.cache.get(key, data)
-
-            differences = found._asdict().items() ^ data._asdict().items()
-            different_attributes = set([k for k, v in differences])
-
-            if found == data:
-                self.cache[key] = data  # new data
-            elif different_attributes.issubset(set(['ofx_file', 'id'])):
-                # merge old and new data (new gets precedence but only if defined)  # nopep8
-                result: TransactionData = TransactionData.merge(data, found)
-                logger.info("Merging transaction data\nsrc: %r\ndst: %r\nres: %r",  # nopep8
-                            data,
-                            found,
-                            result)
-                self.cache[key] = result
-            else:
-                raise ValidationError(
-                    '\nDifferent transaction data found.\nkey: %r\nnew: %r\nold: %r\ndifferences: %r\ndifferent attributes: %r' %  # nopep8
-                    (key, data, found, differences, different_attributes), self)  # nopep8
-
-            logger.debug('Adding %s', msg)
+        logger.debug('Adding %s', msg)
 
     def print(self, msg: str) -> None:
         """Print the cache.
         """
         logger.debug('%s', msg)
         for key in self.cache:
-            logger.debug('key: %r; data: %r',
-                         key,
-                         self.cache[key])
-
-    def lookup(self,
-               stmt_line: StatementLine,
-               account_id: str) -> None:
-        key: TransactionKey
-        data: TransactionData
-        check_no: Optional[str]
-        name: Optional[str]
-        # see cases 1 till 3 above
-        min_case: int = 1
-        max_case: int = 3
-
-        if stmt_line.payee == 'VIREMENT SEPA':
-            check_no = stmt_line.check_no
-            name = stmt_line.memo
-        else:
-            check_no = stmt_line.check_no
-            name = None  # stmt_line.payee
-
-        if check_no and name:
-            pass
-        elif check_no:
-            max_case = 1
-        elif name:
-            min_case = 2
-            max_case = 2
-        else:
-            return
-
-        # we should start with the most specific key
-        # for case in range(max_case, max_case - 1, -1):  try the most specific
-        for case in range(max_case, min_case - 1, -1):
-            # The PDF may differ from the OFX by a different date
-            # or a switch from payee to memo or otherwise: forget them
-            for dt in [stmt_line.accounting_date,
-                       stmt_line.operation_date,
-                       stmt_line.value_date]:
-                assert type(dt) is date, "Type of {} should be date".format(dt)
-
-                key = TransactionKey.make(account_id,
-                                          check_no if case != 2 else None,  # nopep8,
-                                          dt,
-                                          stmt_line.amount,
-                                          name if case != 1 else None)  # nopep8
-
-                if key in self.cache:
-                    data = self.cache[key]
-                    logger.info('Found id (%s)\nstatement line: %r\nkey: %r\ndata: %r',  # nopep8
-                                data.id, stmt_line, key, data)
-                    stmt_line.date = datetime.combine(dt, datetime.min.time())
-                    stmt_line.id = data.id
-                    stmt_line.payee = data.name
-                    stmt_line.memo = data.memo
-                    return
-                else:
-                    logger.debug('Did not find value for key %r', key)
-
-        if not self.printed:
-            self.print('try_cache: no data found')
-            self.printed = True
-
-        return
+            logger.debug('key: %r', key)
+            for data in self.cache[key]:
+                logger.debug('data: %r', data)
 
     def get_unique_id_set(self, account_id: str) -> Set[str]:
         return self.unique_id_sets[account_id]

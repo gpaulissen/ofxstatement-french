@@ -489,7 +489,7 @@ COMPTA|                                          |
         line = StatementLine.copy_from_base(line)
 
         line.end_date = self.statement.end_date
-        self.statement_cache.lookup(line, str(self.statement.account_id))
+        line.adjust(self.statement_cache, str(self.statement.account_id))
         if not line.id and self.statement.account_id is not None:
             line.date = datetime.combine(line.accounting_date,
                                          datetime.min.time())
