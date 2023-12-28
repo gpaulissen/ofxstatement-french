@@ -24,8 +24,8 @@ assert sys.version_info[0] >= 3, "At least Python 3 is required."
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
-THRESHOLD = 2 ** 2
+TRANSACTION_DATA_NR_ITEMS = 4
+THRESHOLD = (TRANSACTION_DATA_NR_ITEMS - 1 - 1) ** 2
 
 
 class Statement(BaseStatement):
@@ -133,8 +133,8 @@ class StatementLine(BaseStatementLine):
         max_dt: Optional[date] = None
         matches: Set[TransactionData] = set()
 
-        if self.payee == 'VIREMENT SEPA':
-            check_no = self.check_no
+        if self.payee == 'VIREMENT SEPA' and not self.check_no:
+            check_no = None
             payee = self.memo
             memo = None
         else:
@@ -193,15 +193,19 @@ class StatementLine(BaseStatementLine):
                     break
 
         # still ok?
-        if max_dt is not None and found is not None:
-            if not self.check_no:
-                self.check_no = data.checknum
+        if max_dt is None or found is None:
+            logger.debug('Could not find a match for %r', self)
+        else:
+            logger.debug('Found a match for %r:\n%r', self, data)
             self.date = datetime.combine(max_dt, datetime.min.time())
             self.id = data.id
-            if self.payee == 'VIREMENT SEPA':
+            if self.payee == 'VIREMENT SEPA' and not self.check_no:
+                self.check_no = data.checknum
                 if not self.memo:
                     self.memo = data.name
             else:
+                if not self.check_no:
+                    self.check_no = data.checknum
                 if not self.payee:
                     self.payee = data.name
                 if not self.memo:
@@ -386,7 +390,7 @@ class TransactionData(NamedTuple):
                 result = 0
                 break
 
-        logger.info("match(\nself=%s,\ntd  =%s\n) = %d", self, td, result)
+        logger.debug("match(\nself=%s,\ntd  =%s\n) = %d", self, td, result)
         return result
 
 
