@@ -337,6 +337,7 @@ class ParserTest(TestCase):
         stmt.assert_valid()
 
         for idx, line in enumerate(stmt.lines, start=0):
+            logger.debug('line %d: %s', idx, line)
             if idx >= 57:
                 self.assertTrue(' ' in line.id)
             else:
@@ -378,6 +379,7 @@ class ParserTest(TestCase):
         stmt.assert_valid()
 
         for idx, line in enumerate(stmt.lines, start=0):
+            logger.debug('line %d: %s', idx, line)
             if idx == 57:
                 self.assertTrue(' ' in line.id)
             else:

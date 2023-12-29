@@ -24,8 +24,159 @@ assert sys.version_info[0] >= 3, "At least Python 3 is required."
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
+
+class TransactionKey(NamedTuple):
+    account_id: str
+    dtposted: Optional[date]
+    trnamt: Optional[Decimal]
+
+    @staticmethod
+    def make(account_id: str,
+             dtposted: Optional[date],
+             amount: Optional[Decimal]) -> 'TransactionKey':
+        assert isinstance(account_id, str), \
+            "account_id (%s) must be an instance of str" % (type(account_id))
+        assert dtposted is None or isinstance(dtposted, date), \
+            "dtposted (%s) must be an instance of date" % (type(dtposted))
+        assert amount is None or isinstance(amount, Decimal), \
+            "amount (%s) must be an instance of Decimal" % (type(amount))
+
+        return TransactionKey(account_id,
+                              dtposted,
+                              amount)
+
+
+class TransactionData(NamedTuple):
+    checknum: Optional[str]
+    name: Optional[str]  # for VIREMENT SEPA
+    memo: Optional[str]
+    id: str
+    ofx_file: str
+
+    @staticmethod
+    def make(check_no: Optional[str],
+             payee: Optional[str],
+             memo: Optional[str],
+             id: str,
+             ofx_file: str) -> 'TransactionData':
+        assert check_no is None or isinstance(check_no, str), \
+            "check_no (%s) must be an instance of str" % (type(check_no))
+        assert payee is None or isinstance(payee, str), \
+            "payee (%s) must be an instance of str or None" % (type(payee))
+        assert memo is None or isinstance(memo, str), \
+            "memo (%s) must be an instance of str or None" % (type(memo))
+        assert isinstance(id, str), \
+            "id (%s) must be an instance of str" % (type(id))
+        assert isinstance(ofx_file, str), \
+            "ofx_file (%s) must be an instance of str" % (type(ofx_file))
+
+        # If payee or memo is not empty there may be a whitespace difference
+        # so remove multiple whitespace characters by a single one
+        payee = ' '.join(payee.split()) if payee else None
+        memo = ' '.join(memo.split()) if memo else None
+
+        return TransactionData(None if check_no == '' else check_no,
+                               None if payee == '' else payee,
+                               None if memo == '' else memo,
+                               id,
+                               ofx_file)
+
+    def match(self, td: 'TransactionData') -> int:
+        def cmp(i1: Optional[Any], i2: Optional[Any]) -> int:
+            if not 11 and not i2:
+                return 0
+            elif not 11:
+                return -1
+            elif not i2:
+                return +1
+            elif str(i1) < str(i2):
+                return -2
+            elif str(i1) > str(i2):
+                return +2
+            else:
+                return 0
+
+        results = [cmp(' ' not in self.id, True),
+                   cmp(self.memo, td.memo),
+                   cmp(self.name, td.name),
+                   cmp(self.checknum, td.checknum)]
+        result: int = 0
+
+        for idx in range(len(results)):
+            if results[idx] in (0, 1):
+                # self.<item> = td.<item> or not td.item
+                # This means that self.<item> matches td.<item>
+                result = result + 2 ** idx
+            elif idx == 3:
+                # this (checknum) must match
+                result = 0
+                break
+
+        logger.debug("match(\nself=%s,\ntd  =%s\n) = %d", self, td, result)
+        return result
+
+
 TRANSACTION_DATA_NR_ITEMS = 4
-THRESHOLD = (TRANSACTION_DATA_NR_ITEMS - 1 - 1) ** 2
+THRESHOLD = 2 ** (TRANSACTION_DATA_NR_ITEMS - 1 - 1)
+
+
+class Transaction(NamedTuple):
+    """
+    A typical OFX transaction record is:
+
+      <STMTTRN>
+        <TRNTYPE>CREDIT
+        <DTPOSTED>20191126
+        <TRNAMT>+248.21
+        <FITID>201901100044BD27
+        <CHECKNUM>F6KJAIV
+        <NAME>EVI DRFIP NOUVELLE AQUIT
+        <MEMO>REMUNERATION DU 11/2019. MINISTE RE : 206 GESTION : 991-033
+      </STMTTRN>
+
+    A matching PDF transaction record may be:
+
+      accounting_date: 26/11/2019
+      payee: VIREMENT SEPA
+      operation_date: 26/11/2019
+      value_date: 26/11/2019
+      amount: 248,21
+      memo: EVI DRFIP NOUVELLE AQUIT
+      check_no: -
+
+    The unique key of an OFX transaction is FITID (used by beancount) and
+    this key will be looked up for the PDF transactions since
+    they do not contain this information.
+
+    In order to look up the FITID these properties MUST be the same:
+    1. account id;
+    2. date posted (DTPOSTED);
+    3. transaction amount (TRNAMT).
+
+    This will be the TransactionKey.
+
+    For other properties it is more of a fuzzy search
+    with the most important first:
+    4. check number (CHECKNUM);
+    5. counter party (NAME);
+    6. memo (MEMO);
+    7. id (FITID) where a (temporary) id containing spaces ranks the lowest;
+
+    This will be the TransactionData.
+
+    So for each date posted and transaction amount a set of transaction data
+    based on OFX transactions will be stored.
+    The program will abort on duplicates.
+
+    Looking up given a PDF transaction:
+    - for the amount and each of the three dates determine the data bucket
+    - determine the highest match with bucket transaction data
+    - if the highest match is below the threshold it will be discarded, i.e.
+      at least check number or counter party must match
+
+    """
+    key: TransactionKey
+    data: TransactionData
 
 
 class Statement(BaseStatement):
@@ -169,26 +320,32 @@ class StatementLine(BaseStatementLine):
             if key in statement_cache.cache:
                 for data in statement_cache.cache[key]:
                     this_match = data.match(target)
-                    if this_match >= THRESHOLD:
-                        if this_match > max_match:
-                            max_match = this_match
-                            max_dt = dt
-                            # remove previous matches and replace by this one
-                            matches.add(data)
-                        elif this_match == max_match:
-                            # add this one
-                            matches.add(data)
+                    if this_match < THRESHOLD or this_match < max_match:
+                        continue
+                    if this_match > max_match:
+                        max_match = this_match
+                        max_dt = dt
+                        # remove previous matches and replace by this one
+                        matches.clear()
+                    matches.add(data)
+
+        # invariant: all entries in matches must have the same match
+        for m in matches:
+            logger.debug('match: %s', m)
+            assert m.match(target) == max_match
 
         found: Optional[TransactionData] = None
 
         if len(matches) > 0:
             found = matches.pop()
+            logger.debug('found: %s', found)
+            assert found.match(target) == max_match
 
         if max_dt is not None and found is not None:
             for data in matches:
                 this_match = data.match(found)
                 if this_match >= THRESHOLD:
-                    # the difference is too much: stop
+                    # the difference between two possible matches is too much
                     found = None
                     break
 
@@ -196,19 +353,19 @@ class StatementLine(BaseStatementLine):
         if max_dt is None or found is None:
             logger.debug('Could not find a match for %r', self)
         else:
-            logger.debug('Found a match for %r:\n%r', self, data)
+            logger.debug('Found a match for %r:\n%r', self, found)
             self.date = datetime.combine(max_dt, datetime.min.time())
-            self.id = data.id
+            self.id = found.id
             if self.payee == 'VIREMENT SEPA' and not self.check_no:
                 # overwrite these attributes
-                self.check_no = data.checknum
-                self.payee = data.name
-                self.memo = data.memo
+                self.check_no = found.checknum
+                self.payee = found.name
+                self.memo = found.memo
             else:
                 # set these attributes if empty
-                self.check_no = data.checknum if not self.check_no else self.check_no  # nopep8
-                self.payee = data.name if not self.payee else self.payee
-                self.memo = data.memo if not self.memo else self.memo
+                self.check_no = found.checknum if not self.check_no else self.check_no  # nopep8
+                self.payee = found.name if not self.payee else self.payee
+                self.memo = found.memo if not self.memo else self.memo
 
         if not statement_cache.printed:
             statement_cache.print('try_cache: no data found')
@@ -234,151 +391,6 @@ def working_directory(path: str) -> Iterator[Any]:
         yield
     finally:
         os.chdir(prev_cwd)
-
-
-class TransactionKey(NamedTuple):
-    """
-    A typical OFX transaction record is:
-
-      <STMTTRN>
-        <TRNTYPE>CREDIT
-        <DTPOSTED>20191126
-        <TRNAMT>+248.21
-        <FITID>201901100044BD27
-        <CHECKNUM>F6KJAIV
-        <NAME>EVI DRFIP NOUVELLE AQUIT
-        <MEMO>REMUNERATION DU 11/2019. MINISTE RE : 206 GESTION : 991-033
-      </STMTTRN>
-
-    A matching PDF transaction record may be:
-
-      accounting_date: 26/11/2019
-      payee: VIREMENT SEPA
-      operation_date: 26/11/2019
-      value_date: 26/11/2019
-      amount: 248,21
-      memo: EVI DRFIP NOUVELLE AQUIT
-      check_no: -
-
-    The unique key of an OFX transaction is FITID (used by beancount) and
-    this key will be looked up for the PDF transactions since
-    they do not contain this information.
-
-    In order to look up the FITID these properties MUST be the same:
-    1. account id;
-    2. date posted (DTPOSTED);
-    3. transaction amount (TRNAMT).
-
-    This will be the TransactionKey.
-
-    For other properties it is more of a fuzzy search
-    with the most important first:
-    4. check number (CHECKNUM);
-    5. counter party (NAME);
-    6. memo (MEMO);
-    7. id (FITID) where a (temporary) id containing spaces ranks the lowest;
-
-    This will be the TransactionData.
-
-    So for each date posted and transaction amount a set of transaction data
-    based on OFX transactions will be stored.
-    The program will abort on duplicates.
-
-    Looking up given a PDF transaction:
-    - for the amount and each of the three dates determine the data bucket
-    - determine the highest match with bucket transaction data
-    - if the highest match is below the threshold it will be discarded, i.e.
-      at least check number or counter party must match
-
-    """
-    account_id: str
-    dtposted: Optional[date]
-    trnamt: Optional[Decimal]
-
-    @staticmethod
-    def make(account_id: str,
-             dtposted: Optional[date],
-             amount: Optional[Decimal]) -> 'TransactionKey':
-        assert isinstance(account_id, str), \
-            "account_id (%s) must be an instance of str" % (type(account_id))
-        assert dtposted is None or isinstance(dtposted, date), \
-            "dtposted (%s) must be an instance of date" % (type(dtposted))
-        assert amount is None or isinstance(amount, Decimal), \
-            "amount (%s) must be an instance of Decimal" % (type(amount))
-
-        return TransactionKey(account_id,
-                              dtposted,
-                              amount)
-
-
-class TransactionData(NamedTuple):
-    checknum: Optional[str]
-    name: Optional[str]  # for VIREMENT SEPA
-    memo: Optional[str]
-    id: str
-    ofx_file: str
-
-    @staticmethod
-    def make(check_no: Optional[str],
-             payee: Optional[str],
-             memo: Optional[str],
-             id: str,
-             ofx_file: str) -> 'TransactionData':
-        assert check_no is None or isinstance(check_no, str), \
-            "check_no (%s) must be an instance of str" % (type(check_no))
-        assert payee is None or isinstance(payee, str), \
-            "payee (%s) must be an instance of str or None" % (type(payee))
-        assert memo is None or isinstance(memo, str), \
-            "memo (%s) must be an instance of str or None" % (type(memo))
-        assert isinstance(id, str), \
-            "id (%s) must be an instance of str" % (type(id))
-        assert isinstance(ofx_file, str), \
-            "ofx_file (%s) must be an instance of str" % (type(ofx_file))
-
-        # If payee or memo is not empty there may be a whitespace difference
-        # so remove multiple whitespace characters by a single one
-        payee = ' '.join(payee.split()) if payee else None
-        memo = ' '.join(memo.split()) if memo else None
-
-        return TransactionData(None if check_no == '' else check_no,
-                               None if payee == '' else payee,
-                               None if memo == '' else memo,
-                               id,
-                               ofx_file)
-
-    def match(self, td: 'TransactionData') -> int:
-        def cmp(i1: Optional[Any], i2: Optional[Any]) -> int:
-            if not 11 and not i2:
-                return 0
-            elif not 11:
-                return -1
-            elif not i2:
-                return +1
-            elif str(i1) < str(i2):
-                return -2
-            elif str(i1) > str(i2):
-                return +2
-            else:
-                return 0
-
-        results = [cmp(' ' not in self.id, True),
-                   cmp(self.memo, td.memo),
-                   cmp(self.name, td.name),
-                   cmp(self.checknum, td.checknum)]
-        result: int = 0
-
-        for idx in range(len(results)):
-            if results[idx] in (0, 1):
-                # self.<item> = td.<item> or not td.item
-                # This means that self.<item> matches td.<item>
-                result = result + idx ** 2
-            elif idx == 3:
-                # this (checknum) must match
-                result = 0
-                break
-
-        logger.debug("match(\nself=%s,\ntd  =%s\n) = %d", self, td, result)
-        return result
 
 
 class StatementCache(object):
