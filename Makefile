@@ -1,7 +1,8 @@
 ## -*- mode: make -*-
 
 # project specific
-PROJECT = ofxstatement-french
+PROJECT        := ofxstatement-french
+BRANCH 	 	     := master
 
 GIT = git
 PYTHON_EXECUTABLES = python python3
@@ -58,9 +59,7 @@ init: ## Fulfill the requirements
 
 clean: init ## Cleanup the mess
 	$(PYTHON) setup.py clean --all
-	$(PYTHON) -Bc "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.py[co]')]"
-	$(PYTHON) -Bc "import pathlib; [p.rmdir() for p in pathlib.Path('.').rglob('__pycache__')]"
-	$(PYTHON) -Bc "import shutil; import os; [shutil.rmtree(d) for d in ['.pytest_cache', '.mypy_cache', 'dist', 'htmlcov', '.coverage'] if os.path.isdir(d)]"
+	$(GIT) clean -d -x -i
 
 install: clean ## Install the module locally
 	$(PIP) install -e .
