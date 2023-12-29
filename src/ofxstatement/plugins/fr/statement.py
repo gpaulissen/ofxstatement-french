@@ -359,6 +359,7 @@ class StatementLine(BaseStatementLine):
             logger.debug('Could not find a match for %r', self)
         else:
             logger.debug('Found a match for %r:\n%r', self, found)
+            logger.info('Replacing old id (%s) by new id (%s)', self.id, found.id)
             self.date = datetime.combine(max_dt, datetime.min.time())
             self.id = found.id
             if self.payee == 'VIREMENT SEPA' and not self.check_no:
