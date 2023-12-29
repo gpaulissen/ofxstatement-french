@@ -281,8 +281,7 @@ class StatementLine(BaseStatementLine):
                                 self.value_date))
         max_match: int = -1
         this_match: int
-        max_dt: Optional[date] = None
-        matches: Set[TransactionData] = set()
+        matches: Set[Transaction] = set()
 
         if self.payee == 'VIREMENT SEPA' and not self.check_no:
             check_no = None
@@ -324,26 +323,32 @@ class StatementLine(BaseStatementLine):
                         continue
                     if this_match > max_match:
                         max_match = this_match
-                        max_dt = dt
                         # remove previous matches and replace by this one
                         matches.clear()
-                    matches.add(data)
+                    matches.add(Transaction(key, data))
+
+        m: Transaction
 
         # invariant: all entries in matches must have the same match
         for m in matches:
-            logger.debug('match: %s', m)
-            assert m.match(target) == max_match
+            logger.debug('match: %s', m.data)
+            assert m.data.match(target) == max_match
 
+        max_dt: Optional[date] = None
         found: Optional[TransactionData] = None
 
+        # Take one match (found) and check against the other matches:
+        # the difference must be below the threshold otherwise
+        # either checknum or name differs.
         if len(matches) > 0:
-            found = matches.pop()
+            m = matches.pop()
+            max_dt, found = m.key.dtposted, m.data
             logger.debug('found: %s', found)
             assert found.match(target) == max_match
 
         if max_dt is not None and found is not None:
-            for data in matches:
-                this_match = data.match(found)
+            for m in matches:
+                this_match = m.data.match(found)
                 if this_match >= THRESHOLD:
                     # the difference between two possible matches is too much
                     found = None
