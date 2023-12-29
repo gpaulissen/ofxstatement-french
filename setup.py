@@ -9,6 +9,9 @@ from setuptools import find_packages
 from setuptools.command.test import test as TestCommand
 from distutils.core import setup
 
+
+assert, False, "Should not use setuptools (setup.py) but poetry (pyproject.toml)."
+
 # To prevent importing about and thereby breaking the coverage info we use this
 # exec hack
 about = {}

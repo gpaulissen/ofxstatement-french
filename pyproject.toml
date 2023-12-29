@@ -1,0 +1,50 @@
+[tool.poetry]
+name = "ofxstatement-french"
+version = "1.5.0"
+description = "ofxstatement plugin for french financial institutions"
+authors = ["Gert-Jan Paulissen"]
+license = "GPLv3"
+readme = ["README.md", "CHANGELOG.md"]
+packages = [{include = "ofxstatement", from = "src"}]
+homepage = "https://github.com/gpaulissen/ofxstatement-french"
+repository = "https://github.com/gpaulissen/ofxstatement-french"
+keywords = ["ofx", "banking", "statement", "BanquePopulaire"]
+classifiers = [
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+		'Development Status :: 6 - Mature',
+		'Programming Language :: Python :: 3',
+    'Natural Language :: English',
+    'Topic :: Office/Business :: Financial :: Accounting',
+    'Topic :: Utilities',
+    'Environment :: Console',
+    'Operating System :: OS Independent',
+    'License :: OSI Approved :: GNU General Public License v3 (GPLv3)'
+]
+
+[tool.poetry.plugins."ofxstatement"]
+fr-banquepopulaire = "ofxstatement.plugins.fr.banquepopulaire:Plugin"
+
+[tool.poetry.scripts]
+ofxstatement-french-version = "ofxstatement.plugins.fr.about:version"
+
+[tool.poetry.dependencies]
+python = ">=3.6"
+ofxstatement = ">0.6.4"
+pdftotext = "*"
+beautifulsoup4 = "*"
+
+[tool.poetry.group.dev.dependencies]
+pyyaml = "*"
+pytest = "^7.4.3"
+pytest-cache = "*"
+pytest-cov = "^4.1.0"
+pytest-flakes = "^4.0.5"
+pytest-pycodestyle = "^2.3.1"
+flake8 = "^6.1.0"
+mypy = "^1.6.1"
+twine = "^4.0.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
