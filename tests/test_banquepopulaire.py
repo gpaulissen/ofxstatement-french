@@ -405,3 +405,20 @@ class ParserTest(TestCase):
 
         for idx, line in enumerate(stmt.lines, start=0):
             self.assertFalse(' ' in line.id)
+
+    @pytest.mark.xfail(raises=ValidationError)
+    def test_20240102(self):
+        """
+        Extrait-de-compte-20220902.pdf.txt can not be parsed (yet).
+        """
+        cfg = {'ofx_files': 'BPACA_OP_202208??.ofx'}
+        plugin = Plugin(None, cfg)
+        parser = plugin.get_parser(
+            os.path.join(here,
+                         'samples',
+                         'Extrait-de-compte-20240102.pdf.txt'))
+
+        # And parse:
+        stmt = parser.parse()
+
+        stmt.assert_valid()

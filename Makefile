@@ -1,16 +1,18 @@
 ## -*- mode: make -*-
 
 # project specific
-PROJECT        := ofxstatement-french
-BRANCH 	 	     := master
+PROJECT            := ofxstatement-french
+BRANCH 	 	         := master
 
-GIT = git
-PYTHON_EXECUTABLES = python python3
-VERBOSE := 
-PIP = $(PYTHON) -O -m pip $(VERBOSE)
-MYPY = mypy
+
+GIT                := git
+PYTHON_EXECUTABLES := python python3
+VERBOSE 	         := 
+PIP 	             := $(PYTHON) -O -m pip $(VERBOSE)
+MYPY               := mypy
 # Otherwise perl may complain on a Mac
-LANG = C
+LANG               := C
+PYTEST_OPTIONS     := --exitfirst
 
 # OS specific section
 ifeq '$(findstring ;,$(PATH))' ';'
@@ -67,7 +69,7 @@ install: clean ## Install the module locally
 
 test: ## Test the module locally
 	$(MYPY) --show-error-codes src
-	$(PYTHON) -m pytest --exitfirst
+	$(PYTHON) -m pytest $(PYTEST_OPTIONS)
 
 dist: install test ## Distribute the module
 	$(PYTHON) setup.py sdist bdist_wheel
