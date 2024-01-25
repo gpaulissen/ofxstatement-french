@@ -411,7 +411,7 @@ class ParserTest(TestCase):
         """
         Extrait-de-compte-20220902.pdf.txt can not be parsed (yet).
         """
-        plugin = Plugin(None, None)
+        plugin = Plugin(None, {'bank_id': 'CCBPFRPPBDX'})
         parser = plugin.get_parser(
             os.path.join(here,
                          'samples',

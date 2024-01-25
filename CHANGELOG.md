@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- [The PDF format of BanquePopulaire has changed since November 2023 so transactions can not be read.](https://github.com/gpaulissen/ofxstatement-french/issues/2)
+
 ## [1.5.0] - 2023-12-29
 
 ## Changed

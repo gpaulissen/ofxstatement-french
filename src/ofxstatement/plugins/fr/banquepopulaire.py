@@ -65,8 +65,24 @@ class Parser(BaseStatementParser[BaseStatementLine]):
         return stmt
 
     def split_records(self) -> Iterator[BaseStatementLine]:
+        # Need to be able to loook ahead for complicated cases
+        lines: List[str] = [line for line in self.fin]
+        first_line_pattern: Pattern[str] = re.compile(r'(RELEVE N° \d+ AU \d\d/\d\d/\d\d\d\d|JE CONSERVE)')
+        line_stripped = lines[0].strip()
+        m = first_line_pattern.match(line_stripped)
+        assert m, f"First line ({line_stripped}) must begin with either 'RELEVE N°' or 'JE CONSERVE'"
+
+        if m.group(1) == 'JE CONSERVE':
+            return self.split_records2(lines)
+        else:
+            return self.split_records1(lines)
+
+    def split_records1(self, lines: List[str]) -> Iterator[BaseStatementLine]:
         """Return iterable object consisting of a line per transaction.
 
+        This format has been used till 2023-10-31 (including).
+        The first line is something like RELEVE N° 7 AU 02/01/2020.
+        
         It starts by determining in order):
         A) the account id
         B) the BIC of the bank
@@ -236,9 +252,6 @@ COMPTA|                                          |
         stmt_line: Optional[StatementLine] = None
         stmt_lines: List[StatementLine] = []
         payee: Optional[str] = None  # to handle note VI
-
-        # Need to be able to loook ahead for complicated cases
-        lines: List[str] = [line for line in self.fin]
 
         pos: int
         m: Optional[Match[str]]
@@ -472,6 +485,10 @@ COMPTA|                                          |
             stmt_lines.append(stmt_line)
         # We can only yield the statement lines when end_date is there,
         # see function get_date() below
+        return (sl for sl in stmt_lines)
+
+    def split_records2(self, lines: List[str]) -> Iterator[BaseStatementLine]:
+        stmt_lines: List[StatementLine] = []
         return (sl for sl in stmt_lines)
 
     def parse_record(self, line: BaseStatementLine) -> Optional[BaseStatementLine]:  # nopep8

@@ -227,6 +227,9 @@ class StatementLine(BaseStatementLine):
         self.operation_date_d_m: Optional[str] = operation_date_d_m
         self.value_date_d_m: Optional[str] = value_date_d_m
         self.end_date: Optional[datetime] = end_date
+        # copied from BaseStatementLine to make mypy happy
+        self.memo: Optional[str] = None
+        self.payee: Optional[str] = None
 
     # forward reference as a string
     @staticmethod
