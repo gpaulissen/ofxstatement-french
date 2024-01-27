@@ -406,7 +406,7 @@ class ParserTest(TestCase):
         for idx, line in enumerate(stmt.lines, start=0):
             self.assertFalse(' ' in line.id)
 
-    @pytest.mark.xfail(raises=ValidationError)
+#    @pytest.mark.xfail(raises=ValidationError)
     def test_20240102(self):
         """
         Extrait-de-compte-20220902.pdf.txt can not be parsed (yet).
