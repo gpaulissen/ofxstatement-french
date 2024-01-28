@@ -7,8 +7,9 @@ BRANCH 	 	         := master
 
 GIT                := git
 PYTHON_EXECUTABLES := python python3
-VERBOSE 	         := 
-PIP 	             := $(PYTHON) -O -m pip $(VERBOSE)
+VERBOSE            :=
+# PYTHON is determined later on so do not use PIP := but PIP =
+PIP                 = $(PYTHON) -O -m pip $(VERBOSE)
 MYPY               := mypy
 # Otherwise perl may complain on a Mac
 LANG               := C

@@ -378,7 +378,7 @@ class ParserTest(TestCase):
             assert diff == [], "Unexpected file contents:\n" + "".join(diff)
             self.assertFalse(len(diff) == 0)
         except Exception:
-            self.assertEquals(len(diff), 67)
+            self.assertEqual(len(diff), 67)
 
     def test_20220828(self):
         """
