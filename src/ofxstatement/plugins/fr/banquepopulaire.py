@@ -3,7 +3,6 @@ from typing import Iterable, Optional, List, Iterator
 from typing import Pattern, Match, cast, Union
 
 import sys
-import traceback
 import re
 import io
 import os
@@ -68,30 +67,29 @@ class Parser(BaseStatementParser[BaseStatementLine]):
     def split_records(self) -> Iterator[BaseStatementLine]:
         # Need to be able to loook ahead for complicated cases
         lines: List[str] = [line for line in self.fin]
-        first_line_pattern: Pattern[str] = re.compile(r'(RELEVE N° \d+ AU \d\d/\d\d/\d\d\d\d|JE CONSERVE)')
-        line_stripped = lines[0].strip()
-        m = first_line_pattern.match(line_stripped)
-        assert m, f"First line ({line_stripped}) must begin with either 'RELEVE N°' or 'JE CONSERVE'"
+        first_line_pattern: Pattern[str] = \
+            re.compile(r'(RELEVE N° \d+ AU \d\d/\d\d/\d\d\d\d|JE CONSERVE)')
 
-        try:
-            if m.group(1) == 'JE CONSERVE':
-                return self.split_records2(lines)
-            else:
-                return self.split_records1(lines)
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            traceback.print_tb(tb) # Fixed format
-            tb_info = traceback.extract_tb(tb)
-            filename, line, func, text = tb_info[-1]
-            logger.error('An error occurred on line {} in statement "{}"'.format(line, text))
-            raise e
+        m: Optional[Match[str]] = None
+
+        for idx, line in enumerate(lines, start=1):
+            line_stripped = line.strip()
+            m = first_line_pattern.match(line_stripped)
+            if m:
+                break
+
+        if m and m.group(1) == 'JE CONSERVE':
+            return self.split_records2(lines)
+        else:
+            return self.split_records1(lines)
 
     def split_records1(self, lines: List[str]) -> Iterator[BaseStatementLine]:
         """Return iterable object consisting of a line per transaction.
 
         This format has been used till 2023-10-31 (including).
-        The first line starts with (excluding white space) something like 'RELEVE N° 7 AU 02/01/2020'.
-        
+        The first line starts with (excluding white space)
+        something like 'RELEVE N° 7 AU 02/01/2020'.
+
         It starts by determining in order):
         A) the account id
         B) the BIC of the bank
@@ -501,7 +499,7 @@ COMPTA|                                          |
 
         This format is in use since 2023-11-01 (including).
         The first line starts with (excluding white space) 'JE CONSERVE'.
-        
+
         It starts by determining in order):
         A) the account id
         B) the transactions that have 6 columns
@@ -531,9 +529,9 @@ COMPTA|                                          |
         IV) A transaction may be spread over several lines like this (columns
         left trimmed and separated by a bar):
 
-DATE  |                                          |DATE     |DATE  |       
+DATE  |                                          |DATE     |DATE  |
       |LIBELLE / REFERENCE                       |         |      |MONTANT
-COMPTA|                                          |OPERATION|VALEUR|       
+COMPTA|                                          |OPERATION|VALEUR|
 ======|==========================================|=========|======|=======
  20/06|PRLV SEPA AUTOROUTES DU            YYYYYYY|20/06    |20/06 |43,70 €
       |XXXXXXXXXXXXXXXXXXXX XXXXXX
@@ -620,12 +618,15 @@ COMPTA|                                          |OPERATION|VALEUR|
             # convert to str to keep just the last two decimals
             amount_out = Decimal(str(amount_out))
 
-            logger.debug("get_amount(%s) = %s", amount_in, str(sign_out * amount_out))
+            logger.debug("get_amount(%s) = %s",
+                         amount_in,
+                         str(sign_out * amount_out))
 
             return sign_out * amount_out
 
         F_pattern: Pattern[str] = re.compile(r'(F\s+)')
-        account_id_pattern: Pattern[str] = re.compile(r'DETAIL DES OPERATIONS DE VOTRE .* N° (\d+)')
+        account_id_pattern: Pattern[str] = \
+            re.compile(r'DETAIL DES OPERATIONS DE VOTRE .* N° (\d+)')
         header_rows: List[List[str]] = [['DATE',
                                          'DATE',
                                          'DATE'],
@@ -639,14 +640,13 @@ COMPTA|                                          |OPERATION|VALEUR|
         description_pos: Optional[int] = None  # LIBELLE/REFERENCE
         operation_date_pos: Optional[int] = None  # DATE OPERATION
         value_date_pos: Optional[int] = None  # DATE VALEUR
-        amount_pos: Optional[int] = None
         # 20 before DATE OPERATION (guessed, see note V)
         check_no_pos: Optional[int] = None
 
-        balance_pattern: Pattern[str] = \
-            re.compile(r'SOLDE (CRED|DEB)ITEUR AU (../../....).\s+([ ,0-9-]+) €$')
-        transaction_pattern: Pattern[str] = \
-            re.compile(r'\d\d/\d\d\s+\S.*\s+\d\d/\d\d\s+\d\d/\d\d\s+[ ,0-9-]+ €$')
+        bal_rex = r'SOLDE (CRED|DEB)ITEUR AU (../../....).\s+([ ,0-9-]+) €$'
+        balance_pattern: Pattern[str] = re.compile(bal_rex)
+        trn_rex = r'\d\d/\d\d\s+\S.*\s+\d\d/\d\d\s+\d\d/\d\d\s+[ ,0-9-]+ €$'
+        transaction_pattern: Pattern[str] = re.compile(trn_rex)
 
         read_end_balance_line: bool = False
 
@@ -675,7 +675,8 @@ COMPTA|                                          |OPERATION|VALEUR|
                     continue
 
             # determine account_id / bank_id
-            # There is no BIC in the new format sothe Plugin must provide the bank_id
+            # There is no BIC in the new format so
+            # the Plugin must provide the bank_id
             if not self.statement.bank_id and self.bank_id:
                 self.statement.bank_id = self.bank_id
                 logger.debug('bank_id: %s', self.statement.bank_id)
@@ -695,9 +696,10 @@ COMPTA|                                          |OPERATION|VALEUR|
                 accounting_date = datetime.strptime(m.group(2),
                                                     '%d/%m/%Y').date()
                 balance = m.group(3)
-                logger.debug('accounting_date: %s; balance: %s',
+                logger.debug('balance date: %s; amount: %s; end: %r',
                              accounting_date,
-                             balance)
+                             balance,
+                             read_end_balance_line)
                 if read_end_balance_line:
                     self.statement.end_balance = get_amount(balance)
                     self.statement.end_date = \
