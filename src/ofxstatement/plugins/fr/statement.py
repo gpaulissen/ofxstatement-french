@@ -250,9 +250,18 @@ class StatementLine(BaseStatementLine):
                 else d.replace(year=d.year + years)
 
         assert self.end_date
-        # Without a year it will be 1900 so add the year
         d_m_y: str = "{}/{}".format(d_m, self.end_date.year)
-        d: date = datetime.strptime(d_m_y, '%d/%m/%Y').date()
+        d: Optional[date] = None
+        try:
+            # Without a year it will be 1900 so add the year
+            d = datetime.strptime(d_m_y, '%d/%m/%Y').date()
+        except ValueError:
+            # Statement file for BanquePopulaire year 2024
+            # can not be processed with download date 2025-01-02.
+            # 29/02/2025 raises ValueError (it should be 29/01/2024)
+            d_m_y = "{}/{}".format(d_m, self.end_date.year - 1)
+            d = datetime.strptime(d_m_y, '%d/%m/%Y').date()
+        assert d is not None
         if d > self.end_date.date():
             d = add_years(d, -1)
         assert d <= self.end_date.date()

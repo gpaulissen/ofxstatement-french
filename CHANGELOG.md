@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2025-01-25
+
+## Fixed
+
+- [Statement file for BanquePopulaire year 2024 can not be processed with download date 2025-01-02.](https://github.com/gpaulissen/ofxstatement-french/issues/4)
+
 ## [1.6.0] - 2024-01-28
 
 ## Added
