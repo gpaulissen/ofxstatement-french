@@ -453,7 +453,10 @@ class StatementCache(object):
         def tag2text(tag: Any,
                      name_to_find: str) -> Optional[str]:
             found = tag.find(name_to_find)
-            return found.contents[0].strip() if found else None
+            logger.debug('found: %s', repr(found))
+            return found.contents[0].strip() \
+                if found and found.contents and len(found.contents) > 0 \
+                else None
 
         def tag2date(tag: Any,
                      name_to_find: str,

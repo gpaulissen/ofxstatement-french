@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2025-10-04
+
+## Fixed
+
+- [An empty statement file with an empty account id cannot be parsed.](https://github.com/gpaulissen/ofxstatement-french/issues/5)
+
 ## [1.7.0] - 2025-01-25
 
 ## Fixed
